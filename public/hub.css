@@ -372,3 +372,7 @@ a.res-card:hover .res-title{color:var(--m-blue)}
 
 .res-form{gap:7px}
 .res-form-field{display:block;height:11px;border:1px solid #d6dde8;border-radius:3px;background:#fafbfc}
+
+/* Officer sign-in: outline the field that was wrong. */
+.form-field input[aria-invalid="true"]{border-color:#b91c1c;box-shadow:0 0 0 1px #b91c1c}
+.dialog-body .login-dialog-error{color:#b91c1c;font-weight:600}

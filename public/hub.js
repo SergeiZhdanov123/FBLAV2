@@ -756,8 +756,8 @@ async function showOfficerLogin() {
   } catch (e) { /* fall through to the form */ }
   openDialog('OFFICER ACCESS', 'Officer sign in', `
     <form id="officer-login-form" novalidate>
-      <div class="form-field"><label for="officer-name">Name or email</label><input id="officer-name" name="officer_name" autocomplete="username" required /></div>
-      <div class="form-field"><label for="officer-password">Password</label><input id="officer-password" name="officer_password" type="password" autocomplete="current-password" required /></div>
+      <div class="form-field"><label for="officer-name">Name or email</label><input id="officer-name" name="officer_name" autocomplete="username" aria-describedby="officer-login-error" required /></div>
+      <div class="form-field"><label for="officer-password">Password</label><input id="officer-password" name="officer_password" type="password" autocomplete="current-password" aria-describedby="officer-login-error" required /></div>
       <p class="login-dialog-error" id="officer-login-error" role="alert" hidden></p>
       <div class="dialog-actions">
         <button class="button" type="submit">Sign in ${icon('arrow')}</button>
@@ -767,17 +767,30 @@ async function showOfficerLogin() {
 }
 async function submitOfficerLogin(form) {
   const err = $('#officer-login-error');
-  const name = form.elements.officer_name.value.trim();
-  const password = form.elements.officer_password.value;
-  const fail = (msg) => { err.textContent = msg; err.hidden = false; };
-  if (!name) return fail('Enter your name or email.');
-  if (!password) return fail('Enter your password.');
+  const nameInput = form.elements.officer_name;
+  const pwInput = form.elements.officer_password;
+  const name = nameInput.value.trim();
+  const password = pwInput.value;
+  [nameInput, pwInput].forEach(i => i.removeAttribute('aria-invalid'));
+  // Show the message and put the cursor in the field that needs fixing.
+  const fail = (msg, field) => {
+    err.textContent = msg;
+    err.hidden = false;
+    const input = field === 'password' ? pwInput : field === 'name' ? nameInput : null;
+    if (input) {
+      input.setAttribute('aria-invalid', 'true');
+      if (field === 'password') input.value = '';
+      input.focus();
+    }
+  };
+  if (!name) return fail('Enter your name or email.', 'name');
+  if (!password) return fail('Enter your password.', 'password');
   const btn = form.querySelector('button[type=submit]');
   btn.disabled = true;
   try {
     const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, password }) });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) return fail(body.error || 'Sign-in failed. Try again.');
+    if (!res.ok) return fail(body.error || 'Sign-in failed. Try again.', body.field);
     location.href = '/officer';
   } catch (e) {
     fail('Could not reach the server. Check your connection.');

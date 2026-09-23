@@ -262,8 +262,22 @@ app.post('/api/login', ipFloodLimiter, loginLimiter, ah(async (req, res) => {
     officerRole = 'advisor';
     method = 'master password';
   } else {
-    await db.logAudit(name, 'officer_login_failed', strict ? 'Wrong account credentials (strict mode)' : 'Wrong password attempt');
-    return res.status(403).json({ error: strict ? 'Sign in with your officer account name and password.' : 'Wrong name or password' });
+    // Say which part was wrong (the chapter asked for this), and name the
+    // field so the sign-in form can point at it. This does reveal whether an
+    // officer name/email exists; per-account rate limiting still applies.
+    let error, field, why;
+    if (!account) {
+      error = 'No officer account uses that name or email. Check the spelling.';
+      field = 'name'; why = 'Unknown name or email';
+    } else if (!account.active) {
+      error = 'This officer account is turned off. Ask the president or advisor to turn it back on.';
+      field = 'name'; why = 'Disabled account';
+    } else {
+      error = 'That password is wrong. Try again.';
+      field = 'password'; why = 'Wrong password';
+    }
+    await db.logAudit(name, 'officer_login_failed', why + (strict ? ' (strict mode)' : ''));
+    return res.status(403).json({ error, field });
   }
   req.session.name = officerName;
   req.session.role = 'officer';
