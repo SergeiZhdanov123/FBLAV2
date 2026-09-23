@@ -35,6 +35,7 @@ const icons = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
   folder: '<path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17v.1"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.file}</svg>`;
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -349,7 +350,29 @@ function renderNav() {
     `<p class="m-nav-label">Chapter</p><nav class="m-nav" aria-label="Chapter"><a href="/about" data-action="about" class="m-nav-item" title="About the Chapter">${icon('about')}<span>About the Chapter</span></a></nav>`;
   $('#mobile-navigation').innerHTML = NAV.slice(0, 4).map(([id, ic, title]) =>
     `<a href="#${id}" class="${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}${esc(title)}</a>`).join('') +
-    `<button id="mobile-more" data-action="menu-open" type="button" aria-label="More navigation" aria-expanded="false" aria-controls="sidebar">${icon('menu')}More</button>`;
+    `<button id="mobile-more" class="${NAV.slice(4).some(([id]) => id === state.page) ? 'active' : ''}" data-action="more-menu" type="button" aria-label="More pages" aria-haspopup="true" aria-expanded="false" aria-controls="m-more-menu">${icon('menu')}More</button>`;
+  // The phone "More" menu (V1's pop-up above the bottom-right corner): the
+  // pages that don't fit in the bottom bar, plus help and officer sign-in.
+  const moreLink = ([id, ic, title]) => `<a href="#${id}" class="${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}${esc(title)}</a>`;
+  $('#m-more-menu').innerHTML = NAV.slice(4).map(moreLink).join('') +
+    `<a href="/about" data-action="about">${icon('about')}About the Chapter</a>` +
+    `<span class="m-more-sep" role="separator"></span>` +
+    `<button type="button" data-action="officers">${icon('help')}Need help?</button>` +
+    `<button type="button" data-action="officer-login">${icon('lock')}Officer sign in</button>`;
+}
+function openMoreMenu() {
+  const menu = $('#m-more-menu');
+  menu.hidden = false;
+  $('#mobile-more').setAttribute('aria-expanded', 'true');
+  const first = menu.querySelector('a,button');
+  if (first) first.focus();
+}
+function closeMoreMenu(returnFocus = false) {
+  const menu = $('#m-more-menu');
+  if (!menu || menu.hidden) return;
+  menu.hidden = true;
+  const more = $('#mobile-more');
+  if (more) { more.setAttribute('aria-expanded', 'false'); if (returnFocus) more.focus(); }
 }
 
 // ---------- pages ----------
@@ -916,6 +939,7 @@ function updateHubSearch() {
 
 // ---------- mobile menu ----------
 function closeMenu() {
+  closeMoreMenu();
   const sidebar = $('#sidebar');
   sidebar.inert = window.innerWidth <= 780;
   sidebar.classList.remove('open');
@@ -1068,6 +1092,8 @@ function refreshAboutGalleries() {
 document.addEventListener('click', (event) => {
   if (event.target.closest('.skip-link')) { event.preventDefault(); $('#main').focus(); return; }
   if (!event.target.closest('.m-search') && !event.target.closest('#hub-search-results')) hideHubSearch();
+  // Any tap outside the More menu (or on one of its items) closes it.
+  if (!event.target.closest('#mobile-more') && (!event.target.closest('#m-more-menu') || event.target.closest('#m-more-menu a, #m-more-menu button'))) closeMoreMenu();
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const { action, id, value } = button.dataset;
@@ -1082,6 +1108,7 @@ document.addEventListener('click', (event) => {
       $('.mobile-close').focus();
       break;
     }
+    case 'more-menu': if ($('#m-more-menu').hidden) openMoreMenu(); else closeMoreMenu(true); break;
     case 'menu-close': closeMenu(); { const more = $('#mobile-more'); if (more) more.focus(); } break;
     case 'sidebar-toggle': {
       const collapsed = $('#chapter-app').classList.toggle('nav-collapsed');
@@ -1135,6 +1162,7 @@ document.addEventListener('keydown', (event) => {
   const day = event.target.closest && event.target.closest('[data-action="cal-day"]');
   if (day && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); showCalDayPopover(day.dataset.value, day); return; }
   if (event.key === 'Escape' && document.getElementById('cal-popover')) { closeCalPopover(); return; }
+  if (event.key === 'Escape' && !$('#m-more-menu').hidden) { closeMoreMenu(true); return; }
   if (event.key === 'Escape') {
     hideHubSearch();
     if (!$('#about-overlay').classList.contains('hidden') && !dialog.open) { hideAbout(); return; }

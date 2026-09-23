@@ -440,3 +440,16 @@ button.m-help-card p{margin-bottom:0}
 .art-browser-page .art-slide-title{font-size:11.5px;margin-bottom:2px}
 .help-person-copy a{font-size:12px;color:var(--m-blue);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .help-person-copy a:hover{text-decoration:underline}
+
+/* Phone "More" menu: V1's pop-up above the bottom-right corner (the sidebar
+   no longer slides out on phones). */
+.m-more-menu[hidden]{display:none!important}
+.m-more-menu{z-index:40;bottom:84px}
+.m-more-menu a,.m-more-menu button{display:flex;align-items:center;gap:10px;width:100%;padding:11px 12px;border:0;border-radius:9px;background:transparent;text-align:left;font-size:13.5px;font-weight:600;color:var(--m-ink);text-decoration:none;cursor:pointer;font-family:inherit}
+.m-more-menu a:hover,.m-more-menu button:hover{background:var(--m-blue-2)}
+.m-more-menu a.active{color:var(--m-blue);background:var(--m-blue-2)}
+.m-more-menu svg{width:17px;height:17px;color:var(--m-muted)}
+.m-more-menu a.active svg{color:var(--m-blue)}
+.m-more-sep{display:block;height:1px;margin:4px 6px;background:var(--m-line)}
+.m-mobile-nav button.active{color:var(--m-blue)}
+@media(min-width:781px){.m-more-menu{display:none!important}}
