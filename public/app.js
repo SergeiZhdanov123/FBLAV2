@@ -527,6 +527,7 @@ function render() {
   renderPurchaseOrders();
   renderOfficerSlideshows();
   renderOfficerResources();
+  renderOfficerGeneral();
   renderAudit();
   renderCustomization();
   renderSettings();
@@ -2899,14 +2900,36 @@ function renderOfficerResources() {
   `;
 }
 
+function renderOfficerGeneral() {
+  const el = $('#tab-general-resources');
+  if (!el) return;
+  const items = (state.slideshows || []).filter(s => s.kind === 'general');
+  el.innerHTML = `
+    <h2>General Resources</h2>
+    <p class="hint">Chapter guides, handbooks, useful links, and anything else that isn't from a meeting or for studying. These show on the site's General Resources page; archived items leave the site but stay here.</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>General Resources</h3>
+        <button class="btn" onclick="openSlideshowForm('general')">+ Add General Resource</button>
+      </div>
+      ${items.length ? `
+        <table>
+          <thead><tr><th>Cover</th><th>Title</th><th>Link</th><th>Description</th><th>Tagged</th><th>Added By</th><th></th></tr></thead>
+          <tbody>${items.map(officerLinkRow).join('')}</tbody>
+        </table>` : '<div class="empty">No general resources yet.</div>'}
+    </div>
+  `;
+}
+
 window.toggleSlideshowArchived = async function(id, archived) {
   await api('PATCH', `/api/slideshows/${id}/archived`, { archived });
   await loadAll(); render();
 };
 function openSlideshowForm(kind) {
-  const label = kind === 'resource' ? 'Study Resource' : 'Meeting Resource';
+  const label = { resource: 'Study Resource', general: 'General Resource' }[kind] || 'Meeting Resource';
+  const placeholder = { resource: 'e.g. Business Management study guide', general: 'e.g. Chapter handbook' }[kind] || 'e.g. Sept 12 meeting slides';
   showModal(`Add ${label}`, `
-    <div class="form-row"><label>Title</label><input id="sl-title" placeholder="${kind === 'resource' ? 'e.g. Business Management study guide' : 'e.g. Sept 12 meeting slides'}" /></div>
+    <div class="form-row"><label>Title</label><input id="sl-title" placeholder="${placeholder}" /></div>
     <div class="form-row"><label>Link (URL)</label><input id="sl-url" placeholder="https://..." /></div>
     <div class="form-row"><label>Description</label><textarea id="sl-desc" rows="2"></textarea></div>
     <div class="form-row"><label>For Chapter Event (optional)</label>

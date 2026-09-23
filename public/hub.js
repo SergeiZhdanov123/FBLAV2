@@ -34,6 +34,7 @@ const icons = {
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
+  folder: '<path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.file}</svg>`;
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -55,7 +56,15 @@ const NAV = [
   ['updates', 'bell', 'Announcements'],
   ['resources', 'slides', 'Meeting Resources'],
   ['prep', 'book', 'Study & Prep'],
+  ['general', 'folder', 'General Resources'],
 ];
+// The three kinds of resource officers post, and where each one lives.
+const RESOURCE_KINDS = {
+  slideshow: { page: 'resources', title: 'Meeting Resources', one: 'Meeting resource', icon: 'slides' },
+  resource: { page: 'prep', title: 'Study & Prep', one: 'Study material', icon: 'book' },
+  general: { page: 'general', title: 'General Resources', one: 'General resource', icon: 'folder' },
+};
+const kindInfo = (kind) => RESOURCE_KINDS[kind] || RESOURCE_KINDS.slideshow;
 const PAGE_TITLES = Object.fromEntries(NAV.map(([id, , title]) => [id, title]));
 
 const now = new Date();
@@ -68,6 +77,7 @@ const state = {
   updateFilter: 'All',
   resourceQuery: '',
   prepQuery: '',
+  generalQuery: '',
 };
 
 // ---------- dates ----------
@@ -169,11 +179,11 @@ function updateRow(a) {
 }
 function resourceRow(r) {
   const href = safeUrl(r.url);
-  const inner = `<span class="m-resource-icon">${icon(r.kind === 'slideshow' ? 'slides' : 'book')}</span>
-    <span class="m-resource-copy"><strong>${esc(r.title)}</strong><span>${esc(r.kind === 'slideshow' ? 'Meeting Resources' : 'Study & Prep')}${r.event_name ? ', ' + esc(r.event_name) : r.competitive_event ? ', ' + esc(r.competitive_event) : ''}</span></span>${href ? icon('external') : ''}`;
+  const inner = `<span class="m-resource-icon">${icon(kindInfo(r.kind).icon)}</span>
+    <span class="m-resource-copy"><strong>${esc(r.title)}</strong><span>${esc(kindInfo(r.kind).title)}${r.event_name ? ', ' + esc(r.event_name) : r.competitive_event ? ', ' + esc(r.competitive_event) : ''}</span></span>${href ? icon('external') : ''}`;
   return href
     ? `<a class="m-resource-row" href="${href}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>`
-    : `<a class="m-resource-row" href="#${r.kind === 'slideshow' ? 'resources' : 'prep'}">${inner}</a>`;
+    : `<a class="m-resource-row" href="#${kindInfo(r.kind).page}">${inner}</a>`;
 }
 function formRow(f) {
   const href = safeUrl(f.url);
@@ -218,7 +228,7 @@ function resourceCover(r, tag) {
   }
   return `<div class="res-cover res-cover-doc" aria-hidden="true">
     <div class="res-page">
-      <span class="res-page-tag">${esc(tag || 'Study guide')}</span>
+      <span class="res-page-tag">${esc(tag || (r.kind === 'general' ? chapterName() : 'Study guide'))}</span>
       <span class="res-page-title">${esc(r.title)}</span>
       <span class="res-page-line" style="width:100%"></span>
       <span class="res-page-line" style="width:92%"></span>
@@ -234,7 +244,7 @@ function resourceCard(r) {
   const inner = `
     ${resourceCover(r, tag)}
     <div class="res-body">
-      <span class="res-kicker">${esc(tag || (r.kind === 'slideshow' ? 'Meeting resource' : 'Study material'))}</span>
+      <span class="res-kicker">${esc(tag || kindInfo(r.kind).one)}</span>
       <h2 class="res-title">${esc(r.title)}</h2>
       ${r.description ? `<p class="res-desc">${esc(r.description)}</p>` : ''}
       <div class="res-foot">
@@ -302,7 +312,7 @@ function updateBell() {
 
 // ---------- navigation ----------
 function renderNav() {
-  const groups = [['Overview', NAV.slice(0, 4)], ['Resources', NAV.slice(4, 6)]];
+  const groups = [['Overview', NAV.slice(0, 4)], ['Resources', NAV.slice(4, 7)]];
   const link = ([id, ic, title]) => `<a href="#${id}" class="m-nav-item ${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''} title="${esc(title)}">${icon(ic)}<span>${esc(title)}</span></a>`;
   $('#navigation').innerHTML = groups.map(([label, items]) =>
     `<p class="m-nav-label">${label}</p><nav class="m-nav" aria-label="${label}">${items.map(link).join('')}</nav>`).join('') +
@@ -615,12 +625,29 @@ function renderPrep() {
   </section>`;
 }
 
+// ---------- General Resources ----------
+function generalResults() {
+  const q = state.generalQuery.trim().toLowerCase();
+  const found = (D().resources || []).filter(r => r.kind === 'general' &&
+    (!q || `${r.title} ${r.description || ''} ${r.event_name || ''}`.toLowerCase().includes(q)));
+  return found.map(resourceCard).join('') || (q
+    ? '<div class="empty-state"><h2>No matching resources.</h2></div>'
+    : '<div class="empty-state"><h2>No general resources yet.</h2></div>');
+}
+function renderGeneral() {
+  return `${heading('General Resources', 'Chapter guides, links, and other useful materials.')}
+  <section class="m-section-card">
+    <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="general-search" type="search" placeholder="Search general resources" value="${esc(state.generalQuery)}" aria-label="Search general resources" /></label></div>
+    <div class="m-res-grid" id="general-results">${generalResults()}</div>
+  </section>`;
+}
+
 function render({ focus = false } = {}) {
   renderNav();
   const title = PAGE_TITLES[state.page] || 'Home';
   $('#breadcrumb').textContent = title;
   document.title = `${title} · ${chapterName()}`;
-  const pages = { home: renderHome, calendar: renderCalendar, forms: renderForms, updates: renderUpdates, resources: renderResources, prep: renderPrep };
+  const pages = { home: renderHome, calendar: renderCalendar, forms: renderForms, updates: renderUpdates, resources: renderResources, prep: renderPrep, general: renderGeneral };
   const main = $('#main');
   main.innerHTML = (pages[state.page] || renderHome)();
   main.setAttribute('aria-busy', 'false');
@@ -810,7 +837,7 @@ function searchResults(query) {
     ...(d.announcements || []).map(a => ({ title: a.title, text: a.body, type: 'Announcement', action: 'update', id: a.id })),
     ...upcoming().map(c => ({ title: c.title, text: c.description, type: `Calendar · ${shortDate(c.date)}`, action: 'item', id: c.key })),
     ...(d.forms || []).map(f => ({ title: f.title, text: f.description, type: 'Google Form', action: 'open-link', id: f.url })),
-    ...(d.resources || []).map(r => ({ title: r.title, text: `${r.description || ''} ${r.competitive_event || ''} ${r.event_name || ''}`, type: r.kind === 'slideshow' ? 'Meeting Resource' : 'Study & Prep', action: r.url ? 'open-link' : 'search-route', id: r.url || (r.kind === 'slideshow' ? 'resources' : 'prep') })),
+    ...(d.resources || []).map(r => ({ title: r.title, text: `${r.description || ''} ${r.competitive_event || ''} ${r.event_name || ''}`, type: kindInfo(r.kind).one, action: r.url ? 'open-link' : 'search-route', id: r.url || kindInfo(r.kind).page })),
   ];
   const found = all.filter(x => `${x.title} ${x.text || ''} ${x.type}`.toLowerCase().includes(q));
   return found.slice(0, 10).map(x => `<button class="search-result" data-action="${x.action}" data-id="${esc(x.id)}" type="button"><span><strong>${esc(x.title)}</strong><small>${esc(x.type)}</small></span>${icon(x.action === 'open-link' ? 'external' : 'arrow')}</button>`).join('') || '<p role="status" style="padding:10px;margin:0;font-size:13px;color:var(--m-muted)">No results. Try another word.</p>';
@@ -1039,6 +1066,7 @@ document.addEventListener('input', (event) => {
   const t = event.target;
   if (t.id === 'hub-search') updateHubSearch();
   if (t.id === 'resource-search') { state.resourceQuery = t.value; $('#resource-results').innerHTML = resourceResults(); }
+  if (t.id === 'general-search') { state.generalQuery = t.value; $('#general-results').innerHTML = generalResults(); }
   if (t.id === 'prep-search') { state.prepQuery = t.value; $('#prep-results').innerHTML = prepResults(); }
 });
 document.addEventListener('submit', (event) => {

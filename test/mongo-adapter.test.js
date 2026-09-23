@@ -256,3 +256,16 @@ test('adapter: resources keep event and competitive-event tags', { skip: !HAS_MO
   await db.markSlideshowReviewed(r.id);
   await db.deleteSlideshow(r.id);
 });
+
+test('adapter: General Resources are their own kind and reach the public hub', { skip: !HAS_MONGO }, async () => {
+  await db.init();
+  const g = await db.addSlideshow({ kind: 'general', title: 'ZZ IT Chapter handbook', url: 'https://example.com/handbook' }, 'IT');
+  assert.equal(g.kind, 'general');
+  const odd = await db.addSlideshow({ kind: 'nonsense', title: 'ZZ IT unknown kind' }, 'IT');
+  assert.equal(odd.kind, 'slideshow', 'unknown kinds fall back to meeting resources');
+  const pub = (await db.publicHub()).resources.find(r => r.id === g.id);
+  assert.equal(pub.kind, 'general');
+  await db.setSlideshowArchived(g.id, true);
+  assert.ok(!(await db.publicHub()).resources.some(r => r.id === g.id), 'archived general resources leave the hub');
+  await db.deleteSlideshow(g.id); await db.deleteSlideshow(odd.id);
+});

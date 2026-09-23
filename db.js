@@ -989,7 +989,8 @@ async function addSlideshow(data, userName) {
   const id = await nextId('slideshows');
   const doc = {
     id,
-    kind: data.kind === 'resource' ? 'resource' : 'slideshow',
+    // slideshow = Meeting Resources, resource = Study & Prep, general = General Resources.
+    kind: ['resource', 'general'].includes(data.kind) ? data.kind : 'slideshow',
     title: data.title || '',
     url,
     description: data.description || null,
