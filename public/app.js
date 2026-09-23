@@ -2940,9 +2940,9 @@ function openSlideshowForm(kind) {
     </div>
     ${kind === 'resource' ? `
     <div class="form-row"><label>Competitive Event (optional)</label><input id="sl-comp" list="sl-comp-list" placeholder="e.g. Business Management" />
-      <datalist id="sl-comp-list">${(chapterConfig().competitive_events || []).map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+      <datalist id="sl-comp-list">${['All Events', ...(chapterConfig().competitive_events || [])].map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>
     </div>
-    <p class="hint">Visitors searching Study &amp; Prep for this event name will find this resource.</p>` : ''}
+    <p class="hint">Tag it "All Events" to put it in the All Events section at the top of Study &amp; Prep. Otherwise it goes under Individual Events, and searching for the event name finds it.</p>` : ''}
     ${coverFieldHtml()}
     <p class="hint">This is public on the chapter site.</p>
   `, async () => {

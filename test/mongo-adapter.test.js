@@ -160,7 +160,12 @@ test('adapter: the public hub carries no private fields', { skip: !HAS_MONGO }, 
   await db.setSlideshowArchived(archived.id, true);
   await db.addTransaction({ type: 'expense', amount: 9, description: 'ZZ IT private expense' });
   const blob = JSON.stringify(await db.publicHub());
-  for (const secret of ['zzpublic@example.com', 'password_hash', 'ZZ IT Poster', 'created_by', 'ZZ IT archived deck', 'ZZ IT private expense', 'starting_balance']) {
+  // The officer's email appears only in the officer list (the "Need help?" popup).
+  const hubNow = await db.publicHub();
+  assert.equal(hubNow.leadership.find(x => x.id === o.id).email, 'zzpublic@example.com');
+  const { leadership, ...rest } = hubNow;
+  assert.ok(!JSON.stringify(rest).includes('zzpublic@example.com'), 'email only in the officer list');
+  for (const secret of ['password_hash', 'ZZ IT Poster', 'created_by', 'ZZ IT archived deck', 'ZZ IT private expense', 'starting_balance']) {
     assert.ok(!blob.includes(secret), `public hub leaked ${secret}`);
   }
   assert.ok(blob.includes('ZZ IT hello'));

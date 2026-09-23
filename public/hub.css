@@ -376,3 +376,67 @@ a.res-card:hover .res-title{color:var(--m-blue)}
 /* Officer sign-in: outline the field that was wrong. */
 .form-field input[aria-invalid="true"]{border-color:#b91c1c;box-shadow:0 0 0 1px #b91c1c}
 .dialog-body .login-dialog-error{color:#b91c1c;font-weight:600}
+
+/* Study & Prep sections ("All Events" first, then "Individual Events"). */
+.prep-section+.prep-section{margin-top:26px}
+.prep-section-title{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:16px;font-weight:700;color:var(--m-ink)}
+.prep-section-title span{font-size:11px;font-weight:700;color:var(--m-muted);background:#eef2f7;border-radius:999px;padding:2px 8px}
+
+/* "Need help?" is a button that opens the officer list. */
+button.m-help-card{display:block;width:calc(100% - 8px);text-align:left;color:#fff;font:inherit;cursor:pointer}
+button.m-help-card:hover{background:rgba(2,21,53,.38);border-color:rgba(255,255,255,.28)}
+button.m-help-card strong{display:block}
+button.m-help-card p{margin-bottom:0}
+.help-group{margin:18px 0 8px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--m-muted)}
+.help-group:first-child{margin-top:4px}
+.help-list{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px 14px}
+.help-person{display:flex;align-items:center;gap:10px;padding:7px 0}
+.help-avatar{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;border-radius:50%;background:#e8eef8;color:var(--fbla-blue);font-size:12px;font-weight:700}
+.help-person-copy{display:flex;flex-direction:column;min-width:0}
+.help-person-copy strong{font-size:13px;color:var(--m-ink)}
+.help-person-copy span{font-size:12px;color:var(--m-muted)}
+
+/* ============================================================
+   Drawn covers, one shape per kind of resource. Flat, simple, and in the
+   chapter's colors: a form, a slide deck, a guidelines document, and a
+   browser window.
+   ============================================================ */
+.res-art{display:flex;align-items:flex-end;justify-content:center;padding:14px 16px 0;background:#eef2f7}
+.res-art b{display:block;height:5px;border-radius:2px;background:#dde3ec}
+.art-slide-title,.art-doc-title,.art-form-title{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:700;line-height:1.25;color:#1f2937}
+
+/* Google Form: a form sheet with a colored top edge, options, and Submit. */
+.art-form{position:relative;display:flex;flex-direction:column;gap:6px;width:70%;height:100%;padding:11px 12px 0;background:#fff;border:1px solid #d6dde8;border-top:4px solid var(--fbla-blue);border-bottom:0;border-radius:4px 4px 0 0}
+.art-form-title{font-size:11.5px;margin-bottom:2px}
+.art-form-q{display:block;width:64%;height:5px;border-radius:2px;background:#c9d2df}
+.art-radio{display:flex;align-items:center;gap:6px}
+.art-radio i{flex:0 0 8px;width:8px;height:8px;border:1.5px solid #9aa8bc;border-radius:50%}
+.art-input{display:block;width:78%;height:9px;border-bottom:1.5px solid #c9d2df}
+.art-submit{position:absolute;right:10px;bottom:9px;padding:2px 7px;border-radius:4px;background:var(--fbla-blue);color:#fff;font-size:8px;font-weight:700;letter-spacing:.02em}
+
+/* Meeting: a slide deck, landscape slides with bullet points. */
+.res-art:has(.art-deck){align-items:center;padding:12px 16px}
+.art-deck{position:relative;width:74%;aspect-ratio:16/10}
+.art-slide{position:absolute;inset:0;display:flex;flex-direction:column;gap:7px;padding:10px 12px;background:#fff;border:1px solid #d6dde8;border-radius:4px;box-shadow:0 1px 2px rgba(17,24,39,.06)}
+.art-slide-back{transform:translate(7px,-7px);background:#f7f9fc}
+.art-slide .art-slide-title{font-size:11.5px;padding-bottom:6px;margin-bottom:1px;border-bottom:2px solid var(--fbla-gold)}
+.art-bullet{display:flex;align-items:center;gap:6px}
+.art-bullet i{flex:0 0 4px;width:4px;height:4px;border-radius:50%;background:var(--fbla-blue)}
+
+/* Study & Prep: an event guidelines document with a checklist. */
+.art-doc{position:relative;display:flex;flex-direction:column;gap:6px;width:70%;height:100%;padding:11px 12px 0;background:#fff;border:1px solid #d6dde8;border-bottom:0;border-radius:3px 3px 0 0;box-shadow:0 1px 2px rgba(17,24,39,.05)}
+.art-doc .res-page-tag{padding-right:30px}
+.art-doc-title{font-size:11.5px;margin-bottom:2px}
+.art-pdf{position:absolute;top:9px;right:9px;padding:1px 5px;border-radius:3px;background:#b91c1c;color:#fff;font-size:7.5px;font-weight:800;letter-spacing:.04em}
+.art-check{display:flex;align-items:center;gap:6px}
+.art-check i{flex:0 0 8px;width:8px;height:8px;border:1.5px solid #9aa8bc;border-radius:2px}
+
+/* General: a browser window with the site's address. */
+.art-browser{display:flex;flex-direction:column;width:76%;height:100%;background:#fff;border:1px solid #d6dde8;border-bottom:0;border-radius:6px 6px 0 0;overflow:hidden}
+.art-browser-bar{display:flex;align-items:center;gap:4px;padding:6px 8px;background:#f3f5f9;border-bottom:1px solid #e3e8ef}
+.art-browser-bar i{flex:0 0 6px;width:6px;height:6px;border-radius:50%;background:#c9d2df}
+.art-browser-bar span{flex:1;min-width:0;margin-left:6px;padding:2px 7px;border-radius:4px;background:#fff;border:1px solid #e3e8ef;font-size:8.5px;color:#6b7280;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.art-browser-page{display:flex;flex-direction:column;gap:6px;padding:10px 12px}
+.art-browser-page .art-slide-title{font-size:11.5px;margin-bottom:2px}
+.help-person-copy a{font-size:12px;color:var(--m-blue);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.help-person-copy a:hover{text-decoration:underline}

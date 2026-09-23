@@ -1576,7 +1576,9 @@ async function publicHub() {
       event_name: f.event_name, due_date: f.due_date || null, created_at: f.created_at,
     })),
     countdowns: activeCountdowns(events),
-    leadership: team.map(o => ({ id: o.id, name: o.name, role: o.role, display_title: o.display_title })),
+    // Emails are shown in the site's "Need help?" officer list (the chapter's
+    // choice). Password hashes and account details never leave the server.
+    leadership: team.map(o => ({ id: o.id, name: o.name, role: o.role, display_title: o.display_title, email: o.email || null })),
   };
 }
 

@@ -217,25 +217,52 @@ function resourceCover(r, tag) {
   if (r.has_cover) {
     return `<div class="res-cover res-cover-img"><img src="/api/public/resources/${r.id}/cover?v=${encodeURIComponent(r.cover_v || '')}" alt="" loading="lazy" decoding="async" /></div>`;
   }
+  // Meeting resource: a slide deck (a slide with bullets, another behind it).
   if (r.kind === 'slideshow') {
-    return `<div class="res-cover res-cover-doc" aria-hidden="true">
-      <div class="res-slide">
-        <span class="res-page-tag">${esc(chapterName())}</span>
-        <span class="res-page-title">${esc(r.title)}</span>
-        <span class="res-page-line" style="width:58%"></span>
+    return `<div class="res-cover res-art" aria-hidden="true">
+      <div class="art-deck">
+        <div class="art-slide art-slide-back"></div>
+        <div class="art-slide">
+          <span class="art-slide-title">${esc(r.title)}</span>
+          <span class="art-bullet"><i></i><b style="width:78%"></b></span>
+          <span class="art-bullet"><i></i><b style="width:62%"></b></span>
+          <span class="art-bullet"><i></i><b style="width:70%"></b></span>
+        </div>
       </div>
     </div>`;
   }
-  return `<div class="res-cover res-cover-doc" aria-hidden="true">
-    <div class="res-page">
-      <span class="res-page-tag">${esc(tag || (r.kind === 'general' ? chapterName() : 'Study guide'))}</span>
-      <span class="res-page-title">${esc(r.title)}</span>
-      <span class="res-page-line" style="width:100%"></span>
-      <span class="res-page-line" style="width:92%"></span>
-      <span class="res-page-line" style="width:97%"></span>
-      <span class="res-page-line" style="width:64%"></span>
+  // General resource: a browser window showing the site it links to.
+  if (r.kind === 'general') {
+    let host = '';
+    try { host = new URL(r.url).hostname.replace(/^www\./, ''); } catch (e) { host = ''; }
+    return `<div class="res-cover res-art" aria-hidden="true">
+      <div class="art-browser">
+        <div class="art-browser-bar"><i></i><i></i><i></i><span>${esc(host || 'link')}</span></div>
+        <div class="art-browser-page">
+          <span class="art-slide-title">${esc(r.title)}</span>
+          <b style="width:88%"></b><b style="width:70%"></b>
+        </div>
+      </div>
+    </div>`;
+  }
+  // Study & Prep: an event guidelines document with a checklist.
+  const isPdf = /\.pdf($|[?#])/i.test(r.url || '');
+  return `<div class="res-cover res-art" aria-hidden="true">
+    <div class="art-doc">
+      ${isPdf ? '<span class="art-pdf">PDF</span>' : ''}
+      <span class="res-page-tag">${esc(tag || 'Study guide')}</span>
+      <span class="art-doc-title">${esc(r.title)}</span>
+      <span class="art-check"><i></i><b style="width:84%"></b></span>
+      <span class="art-check"><i></i><b style="width:66%"></b></span>
+      <span class="art-check"><i></i><b style="width:76%"></b></span>
     </div>
   </div>`;
+}
+// "Open PDF" for PDFs; "Open in Canva" and the like for known sites; plain
+// "Open" when the address is too long to be useful (file-hosting links).
+function openLabel(url, source) {
+  if (/\.pdf($|[?#])/i.test(url || '')) return 'Open PDF';
+  return source && source.length <= 22 ? `Open in ${esc(source)}` : 'Open';
 }
 function resourceCard(r) {
   const href = safeUrl(r.url);
@@ -248,7 +275,7 @@ function resourceCard(r) {
       <h2 class="res-title">${esc(r.title)}</h2>
       ${r.description ? `<p class="res-desc">${esc(r.description)}</p>` : ''}
       <div class="res-foot">
-        <span class="res-open">${href ? `Open${source ? ` in ${esc(source)}` : ''} ${icon('external')}` : 'Link coming soon'}</span>
+        <span class="res-open">${href ? `${openLabel(r.url, source)} ${icon('external')}` : 'Link coming soon'}</span>
         <span class="res-date">${esc(postedLabel(r.created_at))}</span>
       </div>
     </div>`;
@@ -260,12 +287,15 @@ function formCard(f) {
   const href = safeUrl(f.url);
   const past = f.due_date && f.due_date < todayISO();
   const inner = `
-    <div class="res-cover res-cover-doc" aria-hidden="true">
-      <div class="res-page res-form">
-        <span class="res-page-tag">Google Form</span>
-        <span class="res-page-title">${esc(f.title)}</span>
-        <span class="res-form-field"></span>
-        <span class="res-form-field"></span>
+    <div class="res-cover res-art" aria-hidden="true">
+      <div class="art-form">
+        <span class="art-form-title">${esc(f.title)}</span>
+        <span class="art-form-q"></span>
+        <span class="art-radio"><i></i><b style="width:46%"></b></span>
+        <span class="art-radio"><i></i><b style="width:38%"></b></span>
+        <span class="art-form-q" style="width:52%"></span>
+        <span class="art-input"></span>
+        <span class="art-submit">Submit</span>
       </div>
     </div>
     <div class="res-body">
@@ -607,21 +637,34 @@ function renderResources() {
 }
 
 // ---------- Study & Prep ----------
-// Every study material in one list with a search box. (An event-by-event view
-// can be layered on later.)
+// Materials tagged "All Events" (topics lists and other references that cover
+// every event) sit in their own section at the top; each event's own guides
+// follow under "Individual Events". The search box filters both.
+const ALL_EVENTS_TAG = 'all events';
 function prepResults() {
   const q = state.prepQuery.trim().toLowerCase();
   const found = (D().resources || []).filter(r => r.kind === 'resource' &&
     (!q || `${r.title} ${r.description || ''} ${r.competitive_event || ''} ${r.event_name || ''}`.toLowerCase().includes(q)));
-  return found.map(resourceCard).join('') || (q
-    ? '<div class="empty-state"><h2>No matching materials.</h2></div>'
-    : '<div class="empty-state"><h2>No study materials yet.</h2></div>');
+  if (!found.length) {
+    return q
+      ? '<div class="empty-state"><h2>No matching materials.</h2></div>'
+      : '<div class="empty-state"><h2>No study materials yet.</h2></div>';
+  }
+  const isAll = (r) => (r.competitive_event || '').trim().toLowerCase() === ALL_EVENTS_TAG;
+  const all = found.filter(isAll);
+  const each = found.filter(r => !isAll(r));
+  const section = (title, list) => list.length ? `
+    <div class="prep-section">
+      <h2 class="prep-section-title">${title} <span>${list.length}</span></h2>
+      <div class="m-res-grid">${list.map(resourceCard).join('')}</div>
+    </div>` : '';
+  return section('All Events', all) + section('Individual Events', each);
 }
 function renderPrep() {
   return `${heading('Study &amp; Prep', 'Competitive-event guides, conference prep, and chapter study materials.')}
   <section class="m-section-card">
     <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="prep-search" type="search" placeholder="Search study materials, e.g. an event name" value="${esc(state.prepQuery)}" aria-label="Search study materials" /></label></div>
-    <div class="m-res-grid" id="prep-results">${prepResults()}</div>
+    <div id="prep-results">${prepResults()}</div>
   </section>`;
 }
 
@@ -762,6 +805,21 @@ function showUpdate(id) {
   openDialog(`${esc((a.category || 'Chapter news').toUpperCase())} · ${esc(postedLabel(a.created_at))}`, esc(a.title), `
     ${a.body ? `<p class="dialog-lead" style="white-space:pre-wrap">${esc(a.body)}</p>` : ''}
     <div class="dialog-actions"><button class="button secondary" data-action="dialog-route" data-value="updates" type="button">All announcements ${icon('arrow')}</button></div>`);
+}
+// The "Need help?" card: the advisor and the officer team with their emails,
+// so a visitor knows who to find at a meeting or write to.
+function showOfficers() {
+  const team = D().leadership || [];
+  const initials = (n) => String(n || '?').trim().split(/\s+/).map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
+  const row = (o) => `<li class="help-person">
+      <span class="help-avatar" aria-hidden="true">${esc(initials(o.name))}</span>
+      <span class="help-person-copy"><strong>${esc(o.name)}</strong><span>${esc(o.display_title || '')}</span>${o.email ? `<a href="mailto:${esc(o.email)}">${esc(o.email)}</a>` : ''}</span>
+    </li>`;
+  const advisors = team.filter(o => o.role === 'advisor');
+  const officers = team.filter(o => o.role !== 'advisor');
+  openDialog('NEED HELP?', 'Officers and advisors', team.length ? `
+    ${advisors.length ? `<h3 class="help-group">${advisors.length === 1 ? 'Advisor' : 'Advisors'}</h3><ul class="help-list">${advisors.map(row).join('')}</ul>` : ''}
+    ${officers.length ? `<h3 class="help-group">Officers</h3><ul class="help-list">${officers.map(row).join('')}</ul>` : ''}` : '<p>The officer list will be posted here soon.</p>');
 }
 function showNotifications() {
   const seen = store.get('fbla_hub_seen') === null ? new Set(updateKeys()) : seenSet();
@@ -1036,6 +1094,7 @@ document.addEventListener('click', (event) => {
     case 'event': showEvent(id); break;
     case 'update': hideHubSearch(); showUpdate(id); break;
     case 'notifications': showNotifications(); break;
+    case 'officers': closeMenu(); showOfficers(); break;
     case 'officer-login': closeMenu(); showOfficerLogin(); break;
     case 'about': event.preventDefault(); showAbout(); break;
     case 'open-link': hideHubSearch(); if (/^https?:\/\//i.test(id || '')) window.open(id, '_blank', 'noopener'); break;
