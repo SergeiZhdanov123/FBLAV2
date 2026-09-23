@@ -1,0 +1,22 @@
+{
+  "name": "fbla-budgeter",
+  "version": "1.0.0",
+  "description": "State High FBLA chapter operations hub",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "reset": "node reset-db.js",
+    "reset:databases": "node reset-db.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "cookie-session": "^2.1.0",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.0",
+    "google-auth-library": "^10.9.0",
+    "mongodb": "^7.5.0",
+    "nodemailer": "^9.0.5",
+    "zod": "^4.4.3"
+  }
+}

@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#12336d" />
+  <meta name="description" content="State High FBLA: meeting dates, announcements, Google Forms, and competition prep." />
+  <title>Home · State High FBLA</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=100" />
+  <link rel="stylesheet" href="hub.css?v=100" />
+  <script src="hub.js?v=100" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div id="offline-banner" class="offline-banner hidden" role="status" aria-live="polite">
+  You are offline. Saved pages may still open, but updates will wait until you reconnect.
+</div>
+
+<div class="m-app" id="chapter-app">
+  <aside class="m-sidebar" id="sidebar" aria-label="Chapter navigation">
+    <div class="m-brand">
+      <img src="FBLALogo.png" alt="FBLA" class="m-brand-logo" onerror="this.style.display='none'" />
+      <div class="m-brand-copy"><strong data-brand-name>State High FBLA</strong></div>
+      <button class="nav-toggle" data-action="sidebar-toggle" type="button" aria-label="Collapse menu" aria-expanded="true" aria-controls="navigation">☰</button>
+      <button class="mobile-close icon-button" data-action="menu-close" type="button" aria-label="Close navigation">×</button>
+    </div>
+    <div id="navigation"></div>
+    <div class="m-sidebar-bottom">
+      <div class="m-help-card">
+        <strong>Need help?</strong>
+        <p>Questions about an event or a resource? Ask any officer at a meeting.</p>
+        <a href="/about" data-action="about">About our chapter →</a>
+      </div>
+      <div class="m-profile-mini">
+        <button class="officer-link" data-action="officer-login" type="button"><span data-icon="lock"></span><span>Officer sign in</span><span aria-hidden="true">→</span></button>
+      </div>
+    </div>
+  </aside>
+  <button class="nav-scrim" data-action="menu-close" type="button" aria-label="Close navigation" hidden></button>
+
+  <div class="m-main">
+    <header class="m-topbar">
+      <div class="m-crumb"><a href="#home" class="m-crumb-home" data-brand-name>State High FBLA</a><span aria-hidden="true">/</span><b id="breadcrumb">Home</b></div>
+      <div class="m-top-actions">
+        <label class="m-search">
+          <span data-icon="search"></span>
+          <input id="hub-search" type="search" placeholder="Search" aria-label="Search the site" autocomplete="off" aria-controls="hub-search-results" aria-expanded="false" />
+        </label>
+        <button class="m-icon-btn" data-action="notifications" type="button" aria-label="Chapter updates">
+          <span class="m-alert-dot" id="bell-dot" hidden></span><span data-icon="bell"></span>
+        </button>
+      </div>
+    </header>
+    <div class="m-search-results" id="hub-search-results" hidden></div>
+    <main id="main" class="m-tab" tabindex="-1" aria-live="polite" aria-busy="true">
+      <div class="hub-loading">Loading…</div>
+    </main>
+  </div>
+
+  <nav class="m-mobile-nav" id="mobile-navigation" aria-label="Chapter mobile navigation"></nav>
+</div>
+
+  <!-- About page: V1's public About page, word for word. There is nothing to
+       sign up for any more, so it always runs in V1's "public" mode (the
+       /aboutfbla version, with the sign-up buttons left out). -->
+  <div id="about-overlay" class="about-overlay about-public hidden" role="region" aria-label="About the chapter">
+    <div class="about-topbar">
+      <button id="about-back" type="button" class="about-back">‹ Back</button>
+      <div class="about-brand">
+        <img src="FBLALogo.png" alt="State High FBLA" class="about-brand-logo" onerror="this.style.display='none'" />
+      </div>
+      <span class="about-topbar-spacer" aria-hidden="true"></span>
+    </div>
+
+    <main class="about-page">
+      <header class="about-hero">
+        <div class="about-hero-copy">
+          <p class="about-kicker">Future Business Leaders of America</p>
+          <h1 id="about-hero-title">State High FBLA</h1>
+          <p class="about-lead">State High FBLA gives students room to try work that may not fit into a class schedule. Members choose an event and prepare alone or with teammates before taking their work to conferences.</p>
+          <div class="about-hero-actions">
+            <a class="about-text-link" href="https://www.fbla.org/high-school/competitive-events/" target="_blank" rel="noopener">Browse competitive events</a>
+          </div>
+        </div>
+
+        <div class="about-video">
+          <div class="about-video-frame">
+            <iframe
+              src="https://www.youtube-nocookie.com/embed/CLt0M8sJGR0"
+              title="What FBLA is all about"
+              loading="lazy"
+              referrerpolicy="strict-origin-when-cross-origin"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen></iframe>
+          </div>
+          <div class="about-video-caption">
+            <div>
+              <strong>What is FBLA?</strong>
+              <span>A short introduction to the organization and what members do.</span>
+            </div>
+            <a href="https://youtu.be/CLt0M8sJGR0" target="_blank" rel="noopener">Watch on YouTube</a>
+          </div>
+        </div>
+      </header>
+
+      <section class="about-year" aria-labelledby="about-results-title">
+        <p class="about-kicker">Last year's results</p>
+        <h2 id="about-results-title">The year in numbers</h2>
+        <p>State High had <strong>132 members</strong>, and <strong>93 competed at States</strong>. The chapter earned <strong>33 top 10 finishes</strong> there, including <strong>four first-place finishes</strong>. <strong>Twenty-one members</strong> qualified for Nationals, where State High had <strong>one finalist</strong> and a <strong>sixth-place finish</strong>.</p>
+      </section>
+
+      <section class="about-copy-section" aria-labelledby="about-members-title">
+        <h2 id="about-members-title">What members do</h2>
+        <div class="about-copy-columns">
+          <p>Events cover finance, computing, the arts and entertainment. Design has its own events too. Some members take objective tests. Others give presentations or answer questions in a role play.</p>
+          <p>Competition is only part of the chapter. Guest speakers talk about their careers, and members hear about internships and other business opportunities. Members also run chapter activities and help newer students.</p>
+        </div>
+        <a class="about-text-link" href="https://www.fbla.org/high-school/competitive-events/" target="_blank" rel="noopener">See the full event list</a>
+      </section>
+
+      <section class="about-photos" aria-labelledby="about-photos-title">
+        <div class="about-photos-intro">
+          <p class="about-kicker">Competition photos</p>
+          <h2 id="about-photos-title">Competition at every level</h2>
+          <p>Photos from our competition trips.</p>
+        </div>
+
+        <section class="about-photo-stop" aria-labelledby="regionals-title">
+          <div class="about-photo-heading">
+            <h3 id="regionals-title">Regionals</h3>
+            <div class="about-gallery-arrows" role="group" aria-label="Regionals gallery controls">
+              <button type="button" class="about-gallery-arrow" data-gallery-prev aria-controls="regionals-gallery" aria-label="Previous Regionals photo">←</button>
+              <button type="button" class="about-gallery-arrow" data-gallery-next aria-controls="regionals-gallery" aria-label="Next Regionals photo">→</button>
+            </div>
+          </div>
+          <div id="regionals-gallery" class="about-photo-grid">
+            <a href="about-images/regionals-speaker.webp" target="_blank" rel="noopener" aria-label="Open the regional conference speaker photo">
+              <img src="about-images/regionals-speaker.webp" alt="A speaker at the regional FBLA conference while students listen" loading="lazy" decoding="async" />
+            </a>
+            <a href="about-images/regionals-room.webp" target="_blank" rel="noopener" aria-label="Open the regional conference room photo">
+              <img src="about-images/regionals-room.webp" alt="Students seated at tables during the regional FBLA conference" loading="lazy" decoding="async" />
+            </a>
+            <a href="about-images/regionals-awards.webp" target="_blank" rel="noopener" aria-label="Open the Regionals awards photo">
+              <img src="about-images/regionals-awards.webp" alt="State High competitors holding certificates at Regionals" loading="lazy" decoding="async" />
+            </a>
+          </div>
+        </section>
+
+        <section class="about-photo-stop" aria-labelledby="states-title">
+          <div class="about-photo-heading">
+            <h3 id="states-title">States in Hershey</h3>
+            <div class="about-gallery-arrows" role="group" aria-label="States gallery controls">
+              <button type="button" class="about-gallery-arrow" data-gallery-prev aria-controls="states-gallery" aria-label="Previous States photo">←</button>
+              <button type="button" class="about-gallery-arrow" data-gallery-next aria-controls="states-gallery" aria-label="Next States photo">→</button>
+            </div>
+          </div>
+          <div id="states-gallery" class="about-photo-grid">
+            <a href="about-images/states-hershey.webp" target="_blank" rel="noopener" aria-label="Open the State High group photo in Hershey">
+              <img src="about-images/states-hershey.webp" alt="State High FBLA members together outside Hershey's Chocolate Town" loading="lazy" decoding="async" />
+            </a>
+            <a href="about-images/states-winners.webp" target="_blank" rel="noopener" aria-label="Open the States award winners photo">
+              <img src="about-images/states-winners.webp" alt="State High competitors holding award plaques at States" loading="lazy" decoding="async" />
+            </a>
+            <a href="about-images/states-stage.webp" target="_blank" rel="noopener" aria-label="Open the Pennsylvania FBLA States stage photo">
+              <img src="about-images/states-stage.webp" alt="The stage and crowd at the Pennsylvania FBLA State Leadership Conference" loading="lazy" decoding="async" />
+            </a>
+          </div>
+        </section>
+
+        <section class="about-photo-stop" aria-labelledby="nationals-title">
+          <div class="about-photo-heading">
+            <h3 id="nationals-title">Nationals</h3>
+            <div class="about-gallery-arrows" role="group" aria-label="Nationals gallery controls">
+              <button type="button" class="about-gallery-arrow" data-gallery-prev aria-controls="nationals-gallery" aria-label="Previous Nationals photo">←</button>
+              <button type="button" class="about-gallery-arrow" data-gallery-next aria-controls="nationals-gallery" aria-label="Next Nationals photo">→</button>
+            </div>
+          </div>
+          <div id="nationals-gallery" class="about-photo-grid">
+            <a href="about-images/nationals-delegation.webp" target="_blank" rel="noopener" aria-label="Open the Nationals competitors photo">
+              <img src="about-images/nationals-delegation.webp" alt="State High competitors together at Nationals" loading="lazy" decoding="async" />
+            </a>
+            <a href="about-images/nationals-conference.webp" target="_blank" rel="noopener" aria-label="Open the National Leadership Conference group photo">
+              <img src="about-images/nationals-conference.webp" alt="The State High delegation at the 2026 FBLA National Leadership Conference" loading="lazy" decoding="async" />
+            </a>
+          </div>
+        </section>
+      </section>
+
+      <section class="about-after-school" aria-labelledby="about-after-title">
+        <h2 id="about-after-title">After State High</h2>
+        <p>Chapter alumni have gone on to MIT and Penn State's Smeal College of Business, among other schools. The work they did in FBLA helped prepare them for what came next.</p>
+        <!-- Scrolling alumni-school logos. To add a school: drop its PNG in
+             public/CollegeLogos/ and add an <img> to BOTH sets below. The sets
+             must stay IDENTICAL and in the same order: the animation slides the
+             track exactly -50%, so set two lands precisely where set one began
+             and the loop never shows a seam. -->
+        <div class="about-logo-marquee" aria-hidden="true">
+          <div class="about-logo-track">
+            <img src="CollegeLogos/MIT.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/University-of-Princeton-Logo.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/YaleNEW.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Harvard.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/UPenn.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Cornell.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/UChicago.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Northwestern.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Dule.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Georgetown.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Drexel.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Penn-State-University-Logo.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/MIT.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/University-of-Princeton-Logo.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/YaleNEW.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Harvard.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/UPenn.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Cornell.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/UChicago.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Northwestern.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Dule.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Georgetown.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Drexel.png" alt="" loading="lazy" />
+            <img src="CollegeLogos/Penn-State-University-Logo.png" alt="" loading="lazy" />
+          </div>
+        </div>
+      </section>
+
+      <section class="about-leadership-section">
+        <div class="about-leadership-heading">
+          <div>
+            <p class="about-kicker">This year's team</p>
+            <h2>Meet the chapter officers</h2>
+          </div>
+        </div>
+        <div id="about-leadership" class="about-leaders">
+          <p class="muted">Loading the team...</p>
+        </div>
+      </section>
+
+      <section class="about-cta-band">
+        <h2 class="about-public-only">More about FBLA</h2>
+        <p class="about-public-only">Follow the chapter on Instagram, or read about the events members compete in.</p>
+        <div class="about-links">
+          <a href="https://www.instagram.com/statehighfbla/" target="_blank" rel="noopener">Instagram</a>
+          <a href="https://www.fbla.org/high-school/competitive-events/" target="_blank" rel="noopener">Competitive events</a>
+        </div>
+      </section>
+    </main>
+  </div>
+
+<dialog id="dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
+<div class="m-toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

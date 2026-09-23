@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "fbla-hub": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/Users/sergeizhdanov/FBLAappV2/mcp/fbla-mcp.js"],
+      "env": {
+        "FBLA_MCP_OPERATOR": "MCP agent"
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "State High FBLA",
+  "short_name": "State High FBLA",
+  "description": "State High FBLA: the calendar, announcements, Google Forms, and resources.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#12336d",
+  "icons": [
+    { "src": "app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "FBLALogo.png", "sizes": "339x149", "type": "image/png", "purpose": "any" }
+  ]
+}

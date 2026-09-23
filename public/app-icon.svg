@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">State High FBLA</title>
+  <rect width="512" height="512" rx="104" fill="#0b2b5f"/>
+  <path d="M112 126h288v24H112z" fill="#f4b942"/>
+  <path d="M112 362h288v24H112z" fill="#f4b942"/>
+  <text x="256" y="296" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="118" font-weight="800" letter-spacing="-6" text-anchor="middle">FBLA</text>
+</svg>
