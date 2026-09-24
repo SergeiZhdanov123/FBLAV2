@@ -186,11 +186,13 @@ function resourceRow(r) {
     ? `<a class="m-resource-row" href="${href}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>`
     : `<a class="m-resource-row" href="#${kindInfo(r.kind).page}">${inner}</a>`;
 }
+// Red asterisk for a required form (with words for screen readers).
+const reqMark = (f) => (f.required ? '<span class="req-mark" aria-hidden="true">*</span><span class="sr-only"> (required)</span>' : '');
 function formRow(f) {
   const href = safeUrl(f.url);
   return `<a class="m-resource-row" href="${href || '#forms'}" ${href ? 'target="_blank" rel="noopener"' : ''}>
     <span class="m-resource-icon">${icon('file')}</span>
-    <span class="m-resource-copy"><strong>${esc(f.title)}</strong><span>${f.due_date ? `Respond by ${esc(shortDate(f.due_date))}` : (f.event_name ? esc(f.event_name) : 'Google Form')}</span></span>${href ? icon('external') : ''}
+    <span class="m-resource-copy"><strong>${esc(f.title)}${reqMark(f)}</strong><span>${f.due_date ? `Respond by ${esc(shortDate(f.due_date))}` : (f.event_name ? esc(f.event_name) : 'Google Form')}</span></span>${href ? icon('external') : ''}
   </a>`;
 }
 // Where a resource link opens, in words a visitor recognizes.
@@ -300,8 +302,8 @@ function formCard(f) {
       </div>
     </div>
     <div class="res-body">
-      <span class="res-kicker">${esc(f.event_name || 'Google Form')}</span>
-      <h2 class="res-title">${esc(f.title)}</h2>
+      <span class="res-kicker">${f.required ? '<span class="req-tag">Required</span>' : ''}${esc(f.event_name || 'Google Form')}</span>
+      <h2 class="res-title">${esc(f.title)}${reqMark(f)}</h2>
       ${f.description ? `<p class="res-desc">${esc(f.description)}</p>` : ''}
       <div class="res-foot">
         <span class="res-open">${href ? `Open form ${icon('external')}` : 'Link coming soon'}</span>
@@ -755,6 +757,49 @@ async function load() {
   applyBranding();
   updateBell();
   render();
+  maybePopupForm();
+}
+
+// ---------- pop-up forms ----------
+// Officers can make a Google Form pop up when someone opens the site. There
+// are no accounts, so the choice is remembered on this device only:
+//   "I've filled it out" -> never pop this form up again here
+//   "Remind me later"    -> not again until the next visit (this browser tab)
+const POPUP_DONE_KEY = 'fbla_popup_done';
+const popupDone = () => { try { return new Set(JSON.parse(store.get(POPUP_DONE_KEY) || '[]')); } catch (e) { return new Set(); } };
+const popupLater = new Set(JSON.parse((() => { try { return sessionStorage.getItem('fbla_popup_later') || '[]'; } catch (e) { return '[]'; } })()));
+function maybePopupForm() {
+  if (dialog.open || !$('#about-overlay').classList.contains('hidden')) return;
+  const done = popupDone();
+  const next = (D().forms || []).find(f => f.popup && safeUrl(f.url) && !done.has(f.id) && !popupLater.has(f.id));
+  if (!next) return;
+  const past = next.due_date && next.due_date < todayISO();
+  openDialog(next.required ? '<span class="req-tag">Required</span>' : 'GOOGLE FORM', `${esc(next.title)}${reqMark(next)}`, `
+    ${next.description ? `<p class="dialog-lead">${esc(next.description)}</p>` : ''}
+    ${next.event_name || next.due_date ? `<dl class="dialog-facts">
+      ${next.event_name ? `<div><dt>For</dt><dd>${esc(next.event_name)}</dd></div>` : ''}
+      ${next.due_date ? `<div><dt>${past ? 'Was due' : 'Respond by'}</dt><dd>${esc(dateLabel(next.due_date))}</dd></div>` : ''}
+    </dl>` : ''}
+    <div class="dialog-actions">
+      <a class="button" href="${safeUrl(next.url)}" target="_blank" rel="noopener" data-action="popup-open" data-id="${next.id}">Open form ${icon('external')}<span class="sr-only"> (opens in a new tab)</span></a>
+      <button class="button secondary" type="button" data-action="popup-done" data-id="${next.id}">I've filled it out</button>
+      <button class="text-button" type="button" data-action="popup-later" data-id="${next.id}">Remind me later</button>
+    </div>`);
+  const openBtn = dialog.querySelector('[data-action="popup-open"]');
+  if (openBtn) openBtn.focus();
+}
+function dismissPopup(id, forever) {
+  const fid = Number(id);
+  if (forever) {
+    const done = popupDone(); done.add(fid);
+    store.set(POPUP_DONE_KEY, JSON.stringify([...done].slice(-200)));
+  } else {
+    popupLater.add(fid);
+    try { sessionStorage.setItem('fbla_popup_later', JSON.stringify([...popupLater])); } catch (e) { /* storage blocked: fine */ }
+  }
+  closeDialog();
+  // One at a time: show the next pop-up form, if there is one.
+  setTimeout(maybePopupForm, 250);
 }
 function applyBranding() {
   const name = chapterName();
@@ -1145,6 +1190,11 @@ document.addEventListener('click', (event) => {
     case 'cal-day': showCalDayPopover(value, button); break;
     case 'cal-pop-close': closeCalPopover(); break;
     case 'download-item': downloadItem(id); break;
+    // Opening the form counts as "later" (they may not finish it); they can
+    // mark it done next time.
+    case 'popup-open': dismissPopup(id, false); break;
+    case 'popup-done': dismissPopup(id, true); break;
+    case 'popup-later': dismissPopup(id, false); break;
     default: break;
   }
 });

@@ -2009,3 +2009,6 @@ a.login-about { text-decoration: none; }
 .res-thumb { display: block; width: 72px; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid var(--border-soft); border-radius: 4px; background: #f3f4f6; }
 .res-cover-preview { display: block; width: 100%; max-width: 320px; aspect-ratio: 16 / 9; object-fit: cover; margin-top: 8px; border: 1px solid var(--border-soft); border-radius: 6px; }
 .res-cover-preview.hidden { display: none; }
+
+/* Google Forms: the required mark. */
+.req-star { color: #b91c1c; font-weight: 800; margin-left: 2px; }

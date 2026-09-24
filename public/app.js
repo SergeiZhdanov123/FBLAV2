@@ -2308,13 +2308,14 @@ function renderOfficerGoogleForms() {
   const forms = state.googleForms || [];
   const row = (f) => `
     <tr ${f.open ? '' : 'style="opacity:0.55;"'}>
-      <td><strong>${esc(f.title)}</strong> ${f.open ? '<span class="badge paid">On the hub</span>' : '<span class="badge unpaid">Hidden</span>'}${f.open && f.due_date && f.due_date < today() ? ' <span class="badge overdue">Past respond-by date</span>' : ''}</td>
+      <td><strong>${esc(f.title)}</strong>${f.required ? ' <span class="req-star" title="Required">*</span>' : ''} ${f.open ? '<span class="badge paid">On the site</span>' : '<span class="badge unpaid">Hidden</span>'}${f.required ? ' <span class="badge overdue">Required</span>' : ''}${f.popup ? ` <span class="badge gold-badge">${f.open ? 'Pops up' : 'Pop-up paused (hidden)'}</span>` : ''}${f.open && f.due_date && f.due_date < today() ? ' <span class="badge overdue">Past respond-by date</span>' : ''}</td>
       <td>${f.url ? `<a href="${safeUrl(f.url)}" target="_blank" rel="noopener">Open form ↗</a>` : '<span class="muted">none</span>'}</td>
       <td>${esc(f.description || '')}</td>
       <td>${f.event_name ? `<span class="badge neutral">${esc(f.event_name)}</span>` : '<span class="muted">general</span>'}</td>
       <td>${f.due_date ? esc(f.due_date) : '<span class="muted">none</span>'}</td>
       <td>${esc(f.created_by || '')}</td>
       <td>
+        <button class="btn small ${f.popup ? 'secondary' : 'gold'}" onclick="toggleGoogleFormPopup(${f.id}, ${f.popup ? 'false' : 'true'})" title="${f.popup ? 'Stop this form from popping up on the site' : 'Make this form pop up when someone opens the site'}">${f.popup ? 'Stop pop-up' : 'Pop up'}</button>
         <button class="btn small secondary" onclick="openGoogleFormForm(${f.id})">Edit</button>
         <button class="btn small secondary" onclick="toggleGoogleForm(${f.id}, ${f.open ? 'false' : 'true'})">${f.open ? 'Hide from hub' : 'Show on hub'}</button>
         <button class="btn small danger" onclick="deleteGoogleForm(${f.id})">Delete</button>
@@ -2322,7 +2323,7 @@ function renderOfficerGoogleForms() {
     </tr>`;
   el.innerHTML = `
     <h2>Google Forms</h2>
-    <p class="hint">Share a Google Form with the chapter: interest forms, trip paperwork, feedback. It shows on the Forms page of the public hub. Responses go to your Google account, and the hub never stores them. Set the form's own settings in Google (for example, whether it collects email addresses).</p>
+    <p class="hint">Share a Google Form with the chapter: interest forms, trip paperwork, feedback. It shows on the Forms page of the site. <strong>Pop up</strong> makes a form open on screen when someone visits the site; they can open it, say they've filled it out, or be reminded next visit. Responses go to your Google account, and the hub never stores them. Set the form's own settings in Google (for example, whether it collects email addresses).</p>
     <div class="panel">
       <div class="panel-head">
         <h3>Forms on the hub</h3>
@@ -2352,7 +2353,19 @@ window.openGoogleFormForm = function(id) {
       </select>
     </div>
     <div class="form-row"><label>Respond by (optional)</label><input id="gf-due" type="date" value="${f && f.due_date ? esc(f.due_date) : ''}" />
-      <span class="hint" style="margin-top:4px;">Shown on the form's card. The form stays on the hub until you hide it.</span></div>
+      <span class="hint" style="margin-top:4px;">Shown on the form's card. The form stays on the site until you hide it.</span></div>
+    <div class="form-row"><label>Required</label>
+      <label style="display:flex;align-items:center;gap:8px;">
+        <input id="gf-required" type="checkbox" ${f && f.required ? 'checked' : ''} style="width:auto;" />
+        <span>Mark this form as required (a red <strong style="color:#b91c1c">*</strong> on the site)</span>
+      </label>
+    </div>
+    ${f ? '' : `<div class="form-row"><label>Pop up</label>
+      <label style="display:flex;align-items:center;gap:8px;">
+        <input id="gf-popup" type="checkbox" style="width:auto;" />
+        <span>Pop this form up when someone opens the site</span>
+      </label>
+    </div>`}
   `, async () => {
     const body = {
       title: $('#gf-title').value.trim(),
@@ -2360,6 +2373,8 @@ window.openGoogleFormForm = function(id) {
       description: $('#gf-desc').value.trim(),
       event_id: $('#gf-event').value || null,
       due_date: $('#gf-due').value || null,
+      required: $('#gf-required').checked ? 1 : 0,
+      popup: $('#gf-popup') ? ($('#gf-popup').checked ? 1 : 0) : undefined,
     };
     if (!body.title) { alert('Title required'); return false; }
     if (!body.url) { alert('Paste the Google Form link.'); return false; }
@@ -2369,6 +2384,11 @@ window.openGoogleFormForm = function(id) {
     await loadAll(); render();
     return true;
   }, f ? 'Save Changes' : 'Add Form');
+};
+
+window.toggleGoogleFormPopup = async function(id, popup) {
+  await api('PATCH', `/api/google-forms/${id}/popup`, { popup });
+  await loadAll(); render();
 };
 
 window.toggleGoogleForm = async function(id, open) {

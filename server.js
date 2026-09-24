@@ -693,6 +693,13 @@ app.patch('/api/google-forms/:id/open', requireOfficer, ah(async (req, res) => {
   await db.logAudit(req.session.name, 'google_form_status', `id=${req.params.id} ${req.body.open ? 'shown' : 'hidden'}`);
   res.json(f);
 }));
+app.patch('/api/google-forms/:id/popup', requireOfficer, ah(async (req, res) => {
+  try {
+    const f = await db.setGoogleFormPopup(req.params.id, !!req.body.popup);
+    await db.logAudit(req.session.name, 'google_form_popup', `id=${req.params.id} ${req.body.popup ? 'pop-up on' : 'pop-up off'}`);
+    res.json(f);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+}));
 app.delete('/api/google-forms/:id', requireOfficer, ah(async (req, res) => {
   await db.deleteGoogleForm(req.params.id);
   await db.logAudit(req.session.name, 'google_form_delete', `id=${req.params.id}`);

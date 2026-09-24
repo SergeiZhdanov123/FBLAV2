@@ -274,3 +274,17 @@ test('adapter: General Resources are their own kind and reach the public hub', {
   assert.ok(!(await db.publicHub()).resources.some(r => r.id === g.id), 'archived general resources leave the hub');
   await db.deleteSlideshow(g.id); await db.deleteSlideshow(odd.id);
 });
+
+test('adapter: Google Forms can be required and can pop up', { skip: !HAS_MONGO }, async () => {
+  await db.init();
+  const f = await db.addGoogleForm({ title: 'ZZ IT Required form', url: 'https://forms.gle/req', required: 1, popup: 1 }, 'IT');
+  let pub = (await db.publicHub()).forms.find(x => x.id === f.id);
+  assert.equal(pub.required, 1); assert.equal(pub.popup, 1);
+  // Editing keeps the pop-up setting and can clear "required".
+  await db.updateGoogleForm(f.id, { title: 'ZZ IT Required form', url: 'https://forms.gle/req', required: 0 });
+  pub = (await db.publicHub()).forms.find(x => x.id === f.id);
+  assert.equal(pub.required, 0); assert.equal(pub.popup, 1, 'edit does not turn the pop-up off');
+  await db.setGoogleFormPopup(f.id, false);
+  assert.equal((await db.publicHub()).forms.find(x => x.id === f.id).popup, 0);
+  await db.deleteGoogleForm(f.id);
+});

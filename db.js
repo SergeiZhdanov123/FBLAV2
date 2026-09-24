@@ -1442,7 +1442,16 @@ function googleFormFields(data) {
     // shown on the form's card.
     event_id: optionalNumericId(data.event_id),
     due_date: data.due_date || null,
+    // Required forms get a required mark on the site.
+    required: data.required ? 1 : 0,
   };
+}
+// A "pop-up" form opens in a dialog when someone visits the site (until they
+// dismiss it on that device). Only forms that are showing on the site pop up.
+async function setGoogleFormPopup(id, popup) {
+  await init();
+  await docRef('google_forms', Number(id)).update({ popup: popup ? 1 : 0 });
+  return getDoc('google_forms', id);
 }
 async function listGoogleForms(includeClosed = true) {
   await init();
@@ -1455,6 +1464,8 @@ async function listGoogleForms(includeClosed = true) {
         ...f,
         url: safeStoredResourceUrl(f.url),
         open: Number(f.open) ? 1 : 0,
+        required: Number(f.required) ? 1 : 0,
+        popup: Number(f.popup) ? 1 : 0,
         event_id: eventId,
         event_name: eventId != null && events.has(eventId) ? events.get(eventId).name : null,
       };
@@ -1468,7 +1479,7 @@ async function addGoogleForm(data, userName) {
   await init();
   const fields = googleFormFields(data);
   const id = await nextId('google_forms');
-  const doc = { id, ...fields, open: 1, created_by: userName || null, created_at: tsString() };
+  const doc = { id, ...fields, open: 1, popup: data.popup ? 1 : 0, created_by: userName || null, created_at: tsString() };
   await docRef('google_forms', id).set(doc);
   return doc;
 }
@@ -1574,6 +1585,7 @@ async function publicHub() {
     forms: forms.map(f => ({
       id: f.id, title: f.title, url: f.url, description: f.description || null,
       event_name: f.event_name, due_date: f.due_date || null, created_at: f.created_at,
+      required: f.required, popup: f.popup,
     })),
     countdowns: activeCountdowns(events),
     // Emails are shown in the site's "Need help?" officer list (the chapter's
@@ -1610,7 +1622,7 @@ module.exports = {
   listAnnouncements, addAnnouncement, setAnnouncementPinned, deleteAnnouncement, ANNOUNCEMENT_CATEGORIES,
   listCalendar, addCalendarItem, updateCalendarItem, deleteCalendarItem, importCalendarItems,
   listOfficerCalendar, addOfficerCalendarItem, updateOfficerCalendarItem, deleteOfficerCalendarItem,
-  listGoogleForms, addGoogleForm, updateGoogleForm, setGoogleFormOpen, deleteGoogleForm,
+  listGoogleForms, addGoogleForm, updateGoogleForm, setGoogleFormOpen, setGoogleFormPopup, deleteGoogleForm,
   listTransactions, addTransaction, updateTransaction, deleteTransaction, getBalance,
   getSettings, setSetting,
   logAudit, recentAudit,

@@ -453,3 +453,8 @@ button.m-help-card p{margin-bottom:0}
 .m-more-sep{display:block;height:1px;margin:4px 6px;background:var(--m-line)}
 .m-mobile-nav button.active{color:var(--m-blue)}
 @media(min-width:781px){.m-more-menu{display:none!important}}
+
+/* Required forms: red asterisk and a small "Required" tag. */
+.req-mark{color:#b91c1c;font-weight:800;margin-left:3px}
+.req-tag{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:4px;background:#fee2e2;color:#991b1b;font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;vertical-align:1px}
+.dialog-header .eyebrow .req-tag{font-size:10px}
