@@ -35,6 +35,7 @@ const icons = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
   folder: '<path d="M3 7V5a1 1 0 0 1 1-1h5l2 3h9a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z"/>',
+  instagram: '<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17 7v.1"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17v.1"/>',
 };
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[name] || icons.file}</svg>`;
@@ -360,6 +361,7 @@ function renderNav() {
     `<a href="/about" data-action="about">${icon('about')}About the Chapter</a>` +
     `<span class="m-more-sep" role="separator"></span>` +
     `<button type="button" data-action="officers">${icon('help')}Need help?</button>` +
+    `<a href="https://www.instagram.com/statehighfbla/" target="_blank" rel="noopener">${icon('instagram')}Instagram<span class="sr-only"> (opens in a new tab)</span></a>` +
     `<button type="button" data-action="officer-login">${icon('lock')}Officer sign in</button>`;
 }
 function openMoreMenu() {
