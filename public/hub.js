@@ -529,68 +529,19 @@ function calLegend() {
   const kinds = [['meeting', 'Meeting'], ['event', 'Event'], ['deadline', 'Deadline'], ['other', 'Other']];
   return `<div class="cal-legend">${kinds.map(([k, l]) => `<span class="cal-item ${CAL_KIND_CLS[k]}">${l}</span>`).join('')}${customTypes().map(t => `<span class="cal-item cal-other" style="background:${esc(t.color || '#1462d9')};border-color:${esc(t.color || '#1462d9')};color:#fff;">${esc(t.label)}</span>`).join('')}</div>`;
 }
-// ---- Calendar cards (Coming up, and List view) ----
-// The same card as the resource pages, with a simple drawing for each kind:
-// a presentation with people for meetings, a lanyard badge for events, and a
-// tear-off calendar page for deadlines and everything else.
-function whenLine(c) {
-  const d = new Date(c.date + 'T00:00:00');
-  const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-  const end = c.end_date ? ` to ${new Date(c.end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : '';
-  return `${day}${end}${c.time ? ', ' + fmtTime(c.time) : ''}`;
+function calListRow(c) {
+  const meta = calMeta(c.kind);
+  return `<li>
+    <span class="m-cal-date">${esc(shortDate(c.date))}${c.end_date ? ' to ' + esc(shortDate(c.end_date)) : ''}${c.time ? ', ' + esc(fmtTime(c.time)) : ''}</span>
+    <span class="cal-item ${meta.cls}" style="position:static;${meta.color ? `background:${esc(meta.color)};border-color:${esc(meta.color)};color:#fff;` : ''}">${esc(meta.label)}</span>
+    <span class="m-cal-title">${esc(c.title)}</span>
+    ${c.location || c.description ? `<span class="m-cal-desc">${esc([c.location, c.description].filter(Boolean).join(' · '))}</span>` : ''}
+  </li>`;
 }
-// Google Calendar sync brings every date in as an "event", so a synced date
-// with "meeting" in its name is shown as a meeting too.
-const isMeeting = (c) => c.kind === 'meeting' || (c.kind === 'event' && c.source !== 'event' && /\bmeeting\b/i.test(c.title || ''));
-function calCover(c) {
-  const { m, d } = parts(c.date);
-  if (isMeeting(c)) {
-    return `<div class="res-cover res-art" aria-hidden="true">
-      <div class="art-meeting">
-        <div class="art-screen"><span class="art-screen-time">${esc(c.time ? fmtTime(c.time) : MONTHS[m - 1].slice(0, 3) + ' ' + d)}</span><span class="art-screen-title">${esc(c.title)}</span></div>
-        <div class="art-people"><i class="p1"></i><i class="p2"></i><i class="p3"></i></div>
-      </div>
-    </div>`;
-  }
-  if (c.kind === 'event') {
-    return `<div class="res-cover res-art" aria-hidden="true">
-      <div class="art-badge">
-        <span class="art-badge-clip"></span>
-        <span class="res-page-tag">${esc(chapterName())}</span>
-        <span class="art-badge-title">${esc(c.title)}</span>
-        <span class="art-badge-when">${esc(MONTHS[m - 1].slice(0, 3))} ${d}${c.location ? ' · ' + esc(c.location) : ''}</span>
-      </div>
-    </div>`;
-  }
-  const meta = kindMeta(c.kind);
-  return `<div class="res-cover res-art" aria-hidden="true">
-    <div class="art-page ${c.kind === 'deadline' ? 'is-deadline' : ''}"${meta.color ? ` style="--page-top:${esc(meta.color)}"` : ''}>
-      <span class="art-page-month">${esc(MONTHS[m - 1].slice(0, 3))}</span>
-      <span class="art-page-day">${d}</span>
-    </div>
-  </div>`;
-}
-function calCard(c) {
-  const meta = isMeeting(c) ? kindMeta('meeting') : kindMeta(c.kind);
-  return `<article class="res-card cal-card">
-    ${calCover(c)}
-    <div class="res-body">
-      <span class="res-kicker">${esc(meta.label)}</span>
-      <h2 class="res-title"><button class="cal-card-open" type="button" data-action="item" data-id="${esc(c.key)}">${esc(c.title)}</button></h2>
-      <p class="cal-card-when">${icon('clock')}${esc(whenLine(c))}</p>
-      ${c.location ? `<p class="cal-card-when">${icon('location')}${esc(c.location)}</p>` : ''}
-      <div class="res-foot">
-        <span class="res-open">Details ${icon('arrow')}</span>
-        <button class="cal-card-ics" type="button" data-action="download-item" data-id="${esc(c.key)}">${icon('download')}Add to calendar</button>
-      </div>
-    </div>
-  </article>`;
-}
-
 function renderCalendar() {
   const monthKey = `${state.year}-${String(state.month + 1).padStart(2, '0')}`;
   const monthItems = calendarItems().filter(c => c.date && (c.date.startsWith(monthKey) || (c.end_date && c.date < monthKey && c.end_date >= monthKey)));
-  const soon = upcoming().slice(0, 8);
+  const soon = upcoming().slice(0, 10);
   const nav = `
     <div class="cal-head">
       <button class="btn small secondary" type="button" data-action="month-prev" aria-label="Previous month">&lsaquo; Prev</button>
@@ -602,7 +553,7 @@ function renderCalendar() {
     return `${heading('Calendar', 'Meetings, events, and deadlines in one place.', toggle)}
     <section class="m-section-card">
       ${nav}
-      ${monthItems.length ? `<div class="m-res-grid">${monthItems.map(calCard).join('')}</div>` : `<p class="m-empty">Nothing scheduled in ${MONTHS[state.month]}.</p>`}
+      ${monthItems.length ? `<ul class="m-cal-list">${monthItems.map(calListRow).join('')}</ul>` : `<p class="m-empty">Nothing scheduled in ${MONTHS[state.month]}.</p>`}
     </section>`;
   }
   return `${heading('Calendar', 'Meetings, events, and deadlines in one place.', toggle)}
@@ -613,7 +564,7 @@ function renderCalendar() {
   </section>
   <section class="m-section-card">
     <div class="m-section-head"><div><h2>Coming up</h2></div></div>
-    ${soon.length ? `<div class="m-res-grid">${soon.map(calCard).join('')}</div>` : '<p class="m-empty">Nothing scheduled yet.</p>'}
+    ${soon.length ? `<ul class="m-cal-list">${soon.map(calListRow).join('')}</ul>` : '<p class="m-empty">Nothing scheduled yet.</p>'}
   </section>`;
 }
 
