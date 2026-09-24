@@ -525,3 +525,24 @@ dialog.is-plain .dialog-body p{margin:0 0 12px;font-size:13.5px;line-height:1.6;
 dialog.is-plain{position:fixed}
 dialog.is-plain .dialog-header{position:absolute;top:10px;right:12px;padding:0}
 dialog.is-plain .dialog-body{padding-top:22px}
+
+/* Calendar day pop-up: a plain agenda list. */
+.cal-popover.day-pop{width:320px;padding:0;border:1px solid #d9dee6;border-top:1px solid #d9dee6;border-radius:6px;box-shadow:0 4px 14px rgba(15,23,42,.12);font-size:13px}
+.day-pop-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;font-size:13.5px;color:#111827}
+.day-pop .cal-pop-close{font-size:18px;color:#6b7280}
+.day-pop-row{--entry:#1e40af;display:grid;grid-template-columns:62px 1fr;gap:10px;padding:10px 12px;border-bottom:1px solid #eef0f3}
+.day-pop-row:last-child{border-bottom:0}
+.day-pop-row.k-meeting{--entry:#1e4fb8}
+.day-pop-row.k-event{--entry:#15803d}
+.day-pop-row.k-deadline{--entry:#b91c1c}
+.day-pop-row.k-other:not([style]){--entry:#7c3aed}
+.day-pop-time{font-size:12px;color:#374151;font-variant-numeric:tabular-nums;padding-top:1px}
+.day-pop-body{min-width:0;padding-left:10px;border-left:2px solid var(--entry)}
+.day-pop-title{font-weight:600;color:#111827;line-height:1.35;overflow-wrap:anywhere}
+.day-pop-meta{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:3px;font-size:12px;color:#6b7280}
+.day-pop-kind{display:inline-flex;align-items:center;gap:4px;color:var(--entry)}
+.day-pop-kind .day-entry-icon{flex:0 0 12px;margin-top:0}
+.day-pop-desc{margin-top:5px;font-size:12.5px;line-height:1.45;color:#374151;white-space:pre-wrap}
+.day-pop-add{margin-top:6px;padding:0;border:0;background:none;font:inherit;font-size:12px;color:#1e4fb8;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.day-pop-add:hover{color:#12336d}
+.day-pop-empty{padding:12px;color:#6b7280}

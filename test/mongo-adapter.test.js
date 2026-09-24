@@ -288,3 +288,20 @@ test('adapter: Google Forms can be required and can pop up', { skip: !HAS_MONGO 
   assert.equal((await db.publicHub()).forms.find(x => x.id === f.id).popup, 0);
   await db.deleteGoogleForm(f.id);
 });
+
+test('adapter: synced "Meeting" dates come in as meetings; re-sync keeps an officer\'s type', { skip: !HAS_MONGO }, async () => {
+  await db.init();
+  const feed = [
+    { uid: 'zz-m@t', title: 'ZZ IT General FBLA Meeting', date: '2027-02-04', time: '08:00' },
+    { uid: 'zz-e@t', title: 'ZZ IT Holiday Bash', date: '2027-02-05' },
+  ];
+  await db.importCalendarItems(feed);
+  const get = async (t) => (await db.listCalendar()).find(c => c.title === t && c.source === 'custom');
+  assert.equal((await get('ZZ IT General FBLA Meeting')).kind, 'meeting');
+  assert.equal((await get('ZZ IT Holiday Bash')).kind, 'event');
+  const bash = await get('ZZ IT Holiday Bash');
+  await db.updateCalendarItem(bash.id, { title: bash.title, date: bash.date, kind: 'other' });
+  await db.importCalendarItems(feed);
+  assert.equal((await get('ZZ IT Holiday Bash')).kind, 'other', 're-sync keeps the officer-chosen type');
+  await db.deleteCalendarItem((await get('ZZ IT General FBLA Meeting')).id); await db.deleteCalendarItem(bash.id);
+});

@@ -1202,7 +1202,9 @@ async function importCalendarItems(events, opts = {}) {
       const id = await nextId('calendar_items');
       await docRef('calendar_items', id).set({
         id, title, date: ev.date, end_date, time, location,
-        kind: 'event',
+        // A synced date called "... Meeting" is a meeting; anything else an
+        // event. Officers can change the type afterwards; re-syncing keeps it.
+        kind: /\bmeeting\b/i.test(title) ? 'meeting' : 'event',
         description, ics_uid: ev.uid || null,
         created_by: opts.createdBy || 'Calendar sync', created_at: tsString(),
       });

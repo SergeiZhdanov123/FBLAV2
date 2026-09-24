@@ -502,9 +502,7 @@ function calMeta(kind) {
   return { ...meta, cls: CAL_KIND_CLS[kind] || 'cal-other' };
 }
 const calStyle = (meta) => (meta.color ? ` style="background:${esc(meta.color)};border-color:${esc(meta.color)};color:#fff;"` : '');
-// Google Calendar sync brings every date in as an "event", so a synced date
-// with "meeting" in its name is shown as a meeting.
-const isMeeting = (c) => c.kind === 'meeting' || (c.kind === 'event' && c.source !== 'event' && /\bmeeting\b/i.test(c.title || ''));
+const isMeeting = (c) => c.kind === 'meeting';
 const DAY_ICONS = {
   meeting: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="5" r="2.2"/><circle cx="11" cy="5" r="2.2"/><path d="M1.5 13c0-2.2 1.6-3.7 3.5-3.7S8.5 10.8 8.5 13M7.5 13c0-2.2 1.6-3.7 3.5-3.7s3.5 1.5 3.5 3.7"/></svg>',
   event: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 14.5V2m0 .5h8l-1.8 3 1.8 3h-8"/></svg>',
@@ -615,29 +613,33 @@ function showCalDayPopover(ds, cell) {
   closeCalPopover();
   const dayItems = itemsOn(ds);
   const label = new Date(ds + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  // A plain agenda: time on the left, what and where on the right.
   const rows = dayItems.map(it => {
-    const meta = isMeeting(it) ? calMeta('meeting') : calMeta(it.kind);
-    const range = it.end_date ? ` <span class="cal-pop-range">${esc(shortDate(it.date))} to ${esc(shortDate(it.end_date))}</span>` : '';
-    return `<div class="cal-pop-item">
-      <div class="cal-pop-line">
-        <span class="cal-item ${meta.cls}" style="position:static;${meta.color ? `background:${esc(meta.color)};border-color:${esc(meta.color)};color:#fff;` : ''}">${esc(meta.label)}</span>
-        <strong>${esc(it.title)}</strong>
+    const kind = isMeeting(it) ? 'meeting' : (BUILTIN_KINDS[it.kind] ? it.kind : 'other');
+    const meta = kindMeta(it.kind);
+    const style = meta.color && kind === 'other' ? ` style="--entry:${esc(meta.color)}"` : '';
+    const when = it.end_date ? `${esc(shortDate(it.date))} to ${esc(shortDate(it.end_date))}` : '';
+    return `<div class="day-pop-row k-${kind}"${style}>
+      <div class="day-pop-time">${it.time ? esc(fmtTime(it.time)) : 'All day'}</div>
+      <div class="day-pop-body">
+        <div class="day-pop-title">${esc(it.title)}</div>
+        <div class="day-pop-meta"><span class="day-pop-kind"><span class="day-entry-icon">${DAY_ICONS[kind]}</span>${esc(kind === 'meeting' ? 'Meeting' : meta.label)}</span>${it.location ? `<span>${esc(it.location)}</span>` : ''}${when ? `<span>${when}</span>` : ''}</div>
+        ${it.description ? `<div class="day-pop-desc">${esc(it.description)}</div>` : ''}
+        ${it.key ? `<button class="day-pop-add" type="button" data-action="download-item" data-id="${esc(it.key)}">Add to my calendar</button>` : ''}
       </div>
-      <div class="cal-pop-meta">${it.time ? esc(fmtTime(it.time)) : 'All day'}${it.location ? `, ${esc(it.location)}` : ''}${range}</div>
-      ${it.description ? `<div class="cal-pop-desc">${esc(it.description)}</div>` : ''}
     </div>`;
   }).join('');
   const pop = document.createElement('div');
   pop.id = 'cal-popover';
-  pop.className = 'cal-popover';
+  pop.className = 'cal-popover day-pop';
   pop.setAttribute('role', 'dialog');
   pop.setAttribute('aria-label', label);
   pop.innerHTML = `
-    <div class="cal-pop-head">
-      <strong>${esc(label)}</strong>
+    <div class="day-pop-head">
+      <span>${esc(label)}</span>
       <button class="cal-pop-close" type="button" data-action="cal-pop-close" aria-label="Close">×</button>
     </div>
-    ${rows || '<div class="cal-pop-empty">Nothing on this day.</div>'}`;
+    ${rows || '<div class="day-pop-empty">Nothing on this day.</div>'}`;
   document.body.appendChild(pop);
   // Position beside the clicked cell, clamped to the viewport.
   const r = cell.getBoundingClientRect();
