@@ -2025,3 +2025,4 @@ a.login-about { text-decoration: none; }
 .cz-q-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .cz-q-add select { flex: 1 1 280px; min-width: 0; max-width: 520px; }
 @media (max-width: 640px) { .cz-q-row { flex-wrap: wrap; } .cz-q-actions { width: 100%; justify-content: flex-start; padding-left: 34px; } }
+.cz-q-status { color: var(--muted); font-size: 12.5px; }

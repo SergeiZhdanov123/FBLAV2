@@ -2675,9 +2675,8 @@ function renderCustomization() {
     </div>
     <div class="panel">
       <h3>Home Card Queue</h3>
-      <p style="color:var(--muted)">Line up calendar dates for the blue card. It counts down to the first one, and the moment that date starts it moves on to the next, with its own countdown. All-day dates stay up until their day is over. When the queue runs out, the card goes back to showing the next meeting.${(cfg.home_card_title || cfg.home_card_desc) ? ' <strong>The Home Card message above is set, so it shows instead of the queue until you clear it.</strong>' : ''}</p>
+      <p style="color:var(--muted)">Line up calendar dates for the blue card. It counts down to the first one, and the moment that date starts it moves on to the next, with its own countdown. All-day dates stay up until their day is over. Changes save as you make them. When the queue runs out, the card goes back to showing the next meeting.${(cfg.home_card_title || cfg.home_card_desc) ? ' <strong>The Home Card message above is set, so it shows instead of the queue until you clear it.</strong>' : ''}</p>
       <div id="cz-queue"></div>
-      <div class="settings-row"><button class="btn" onclick="saveCardQueue()">Save Queue</button></div>
     </div>
     <div class="panel">
       <h3>Chapter Details</h3>
@@ -2705,8 +2704,9 @@ function renderCustomization() {
   renderCardQueue();
 }
 
-// ----- Home Card Queue (edited here, saved with "Save Queue") -----
+// ----- Home Card Queue (every change saves right away) -----
 let czQueue = null;
+let czQueueStatus = '';
 const calDoneAt = (c) => (c.time ? new Date(`${c.date}T${c.time}:00`).getTime() : new Date(`${c.end_date || c.date}T00:00:00`).getTime() + 86400000);
 function calItemLabel(c) {
   const d = new Date(c.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -2737,36 +2737,48 @@ function renderCardQueue() {
   box.innerHTML = `
     ${czQueue.length ? `<ol class="cz-q-list">${rows}</ol>` : '<p class="hint">Nothing queued. The card shows the next meeting on the calendar.</p>'}
     <div class="cz-q-add">
-      <select id="cz-q-pick" aria-label="Calendar date to add">
-        ${options.length ? options.map(c => `<option value="${esc(c.ref)}">${esc(calItemLabel(c))} · ${esc(c.title)}</option>`).join('') : '<option value="">No upcoming dates to add</option>'}
+      <select id="cz-q-pick" aria-label="Add a date to the queue" onchange="addCardQueue(this.value)" ${options.length ? '' : 'disabled'}>
+        <option value="">${options.length ? '+ Add a date to the queue…' : 'No upcoming dates to add'}</option>
+        ${options.map(c => `<option value="${esc(c.ref)}">${esc(calItemLabel(c))} · ${esc(c.title)}</option>`).join('')}
       </select>
-      <button class="btn small secondary" type="button" onclick="addCardQueue()" ${options.length ? '' : 'disabled'}>Add to queue</button>
       ${czQueue.length > 1 ? '<button class="btn small secondary" type="button" onclick="sortCardQueue()">Sort by date</button>' : ''}
+      <span class="cz-q-status" role="status" aria-live="polite">${esc(czQueueStatus)}</span>
     </div>`;
 }
-window.addCardQueue = function() {
-  const ref = $('#cz-q-pick') && $('#cz-q-pick').value;
-  if (ref && !czQueue.includes(ref)) czQueue.push(ref);
+// Save the queue as it is now. Changes show immediately and are rolled back
+// if the save fails, so what's on screen is always what's saved.
+async function persistCardQueue(previous) {
+  czQueueStatus = 'Saving…'; renderCardQueue();
+  try {
+    await api('PUT', '/api/settings/customization', { home_card_queue: czQueue });
+    if (state.config) state.config.home_card_queue = [...czQueue];
+    czQueueStatus = 'Saved';
+  } catch (err) {
+    czQueue = previous;
+    czQueueStatus = '';
+    alert('The queue could not be saved: ' + (err.message || err));
+  }
   renderCardQueue();
+}
+function changeCardQueue(fn) {
+  const previous = [...czQueue];
+  fn();
+  persistCardQueue(previous);
+}
+window.addCardQueue = function(ref) {
+  if (!ref || czQueue.includes(ref)) return;
+  changeCardQueue(() => czQueue.push(ref));
 };
-window.removeCardQueue = function(i) { czQueue.splice(i, 1); renderCardQueue(); };
+window.removeCardQueue = function(i) { changeCardQueue(() => czQueue.splice(i, 1)); };
 window.moveCardQueue = function(i, dir) {
   const j = i + dir;
   if (j < 0 || j >= czQueue.length) return;
-  [czQueue[i], czQueue[j]] = [czQueue[j], czQueue[i]];
-  renderCardQueue();
+  changeCardQueue(() => { [czQueue[i], czQueue[j]] = [czQueue[j], czQueue[i]]; });
 };
 window.sortCardQueue = function() {
   const byRef = new Map((state.calendar || []).map(c => [c.ref, c]));
   const key = (r) => { const c = byRef.get(r); return c ? `${c.date}T${c.time || '00:00'}` : '9999'; };
-  czQueue.sort((a, b) => key(a).localeCompare(key(b)));
-  renderCardQueue();
-};
-window.saveCardQueue = async function() {
-  await api('PUT', '/api/settings/customization', { home_card_queue: czQueue || [] });
-  czQueue = null;
-  await loadAll(); render();
-  alert('Queue saved. The home page shows it the next time it loads.');
+  changeCardQueue(() => czQueue.sort((a, b) => key(a).localeCompare(key(b))));
 };
 
 window.saveCustomization = async function() {
