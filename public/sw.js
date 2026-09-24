@@ -1,10 +1,10 @@
 // Bumping this cache name forces the old cache (and its stale app.js/styles.css)
 // to be purged on activate. Increment it whenever the caching logic changes.
-const STATIC_CACHE = 'fbla-hub-v2-static-v1';
+const STATIC_CACHE = 'fbla-hub-v2-static-v2';
 
 // Only the rarely-changing shell is precached. The app code (app.js/styles.css)
 // and the page itself are fetched network-first below so updates always land.
-const PRECACHE = ['/manifest.json', '/app-icon.svg', '/favicon.png', '/FBLALogo.png'];
+const PRECACHE = ['/manifest.json', '/favicon.ico', '/favicon.png', '/apple-touch-icon.png', '/FBLALogo.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(STATIC_CACHE).then(cache => cache.addAll(PRECACHE)).catch(() => {}));
@@ -44,7 +44,7 @@ self.addEventListener('fetch', event => {
   }
 
   // Icons/manifest change rarely: serve from cache, fall back to network.
-  const isShellAsset = ['/manifest.json', '/app-icon.svg', '/favicon.png', '/FBLALogo.png'].includes(url.pathname);
+  const isShellAsset = ['/manifest.json', '/favicon.ico', '/favicon.png', '/apple-touch-icon.png', '/FBLALogo.png'].includes(url.pathname);
   if (!isShellAsset) return;
   event.respondWith(caches.match(request).then(cached => cached || fetch(request)));
 });

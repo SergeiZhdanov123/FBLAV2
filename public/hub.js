@@ -767,7 +767,7 @@ const dialog = $('#dialog');
 let returnFocus = null;
 function openDialog(kicker, title, body) {
   if (!dialog.open) returnFocus = document.activeElement;
-  $('#dialog-content').innerHTML = `<div class="dialog-header"><p class="eyebrow">${kicker}</p><button class="icon-button" data-action="dialog-close" type="button" aria-label="Close dialog">${icon('close')}</button></div><div class="dialog-body"><h2 id="dialog-title">${title}</h2>${body}</div>`;
+  $('#dialog-content').innerHTML = `<div class="dialog-header"><p class="eyebrow">${kicker || ''}</p><button class="icon-button" data-action="dialog-close" type="button" aria-label="Close dialog">${icon('close')}</button></div><div class="dialog-body"><h2 id="dialog-title">${title}</h2>${body}</div>`;
   if (!dialog.open) dialog.showModal();
   document.body.style.overflow = 'hidden';
   const first = dialog.querySelector('input:not([type=hidden]), .dialog-body button, .dialog-body a, button');
@@ -862,7 +862,7 @@ async function showOfficerLogin() {
     const me = await (await fetch('/api/me')).json();
     if (me && me.loggedIn) { location.href = '/officer'; return; }
   } catch (e) { /* fall through to the form */ }
-  openDialog('OFFICER ACCESS', 'Officer sign in', `
+  openDialog('', 'Officer sign in', `
     <form id="officer-login-form" novalidate>
       <div class="form-field"><label for="officer-name">Name or email</label><input id="officer-name" name="officer_name" autocomplete="username" aria-describedby="officer-login-error" required /></div>
       <div class="form-field"><label for="officer-password">Password</label><input id="officer-password" name="officer_password" type="password" autocomplete="current-password" aria-describedby="officer-login-error" required /></div>
