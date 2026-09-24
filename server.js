@@ -15,6 +15,8 @@ const sheetsBackup = createGoogleSheetsBackup({ snapshotProvider: () => db.backu
 let initialBackupStarted = false;
 
 const app = express();
+// Wrap async route handlers so errors hit the global error handler.
+const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const PORT = process.env.PORT || 8080;
 const IS_PROD = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
 
@@ -137,6 +139,72 @@ app.get('/officer', sendPage('officer.html'));
 app.get('/about', sendPage('index.html'));
 app.get('/aboutfbla', sendPage('index.html'));
 
+// The public chapter calendar as a subscription feed (iCalendar). Members add
+// it once ("Add to your calendar") and their calendar app keeps it current.
+// Times are stored as Eastern wall-clock times, so they carry that TZID.
+function icsText(v) {
+  return String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/\r?\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+}
+// Long lines must be folded at 75 octets (RFC 5545).
+function icsFold(line) {
+  const out = [];
+  let rest = line;
+  while (Buffer.byteLength(rest) > 75) {
+    let cut = 75;
+    while (Buffer.byteLength(rest.slice(0, cut)) > 75) cut--;
+    out.push(rest.slice(0, cut));
+    rest = ' ' + rest.slice(cut);
+  }
+  out.push(rest);
+  return out.join('\r\n');
+}
+const ICS_TZ = [
+  'BEGIN:VTIMEZONE', 'TZID:America/New_York',
+  'BEGIN:DAYLIGHT', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'TZNAME:EDT', 'DTSTART:19700308T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'END:DAYLIGHT',
+  'BEGIN:STANDARD', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'TZNAME:EST', 'DTSTART:19701101T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'END:STANDARD',
+  'END:VTIMEZONE',
+];
+function buildCalendarFeed(items, calName) {
+  const compact = (ds) => String(ds).replace(/-/g, '');
+  const nextDay = (ds) => { const d = new Date(ds + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); };
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//State High FBLA//Chapter Calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    `X-WR-CALNAME:${icsText(calName)}`, 'X-WR-TIMEZONE:America/New_York',
+    'REFRESH-INTERVAL;VALUE=DURATION:PT6H', 'X-PUBLISHED-TTL:PT6H',
+    ...ICS_TZ,
+  ];
+  for (const c of items) {
+    if (!c.date) continue;
+    // An event and its payment deadlines share an id, so the title keeps each
+    // UID unique; the UID stays stable as long as the entry does.
+    const uidKey = c.source === 'payment' ? `${c.id}-${/second/i.test(c.title) ? 2 : 1}` : c.id;
+    lines.push('BEGIN:VEVENT', `UID:${c.source}-${uidKey}@statehighfbla`, `DTSTAMP:${stamp}`);
+    const m = /^(\d{1,2}):(\d{2})$/.exec(c.time || '');
+    if (m && !c.end_date) {
+      const start = `${compact(c.date)}T${m[1].padStart(2, '0')}${m[2]}00`;
+      const endH = Math.min(23, Number(m[1]) + 1);
+      lines.push(`DTSTART;TZID=America/New_York:${start}`, `DTEND;TZID=America/New_York:${compact(c.date)}T${String(endH).padStart(2, '0')}${m[2]}00`);
+    } else {
+      lines.push(`DTSTART;VALUE=DATE:${compact(c.date)}`, `DTEND;VALUE=DATE:${compact(nextDay(c.end_date || c.date))}`);
+    }
+    lines.push(`SUMMARY:${icsText(c.title)}`);
+    if (c.location) lines.push(`LOCATION:${icsText(c.location)}`);
+    if (c.description) lines.push(`DESCRIPTION:${icsText(c.description)}`);
+    lines.push('END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.map(icsFold).join('\r\n') + '\r\n';
+}
+app.get('/calendar.ics', ah(async (req, res) => {
+  const [items, settings] = await Promise.all([db.listCalendar(), db.getSettings()]);
+  const name = (settings.chapter_name || 'State High FBLA').trim();
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  if (req.query.download) res.setHeader('Content-Disposition', 'attachment; filename="state-high-fbla-calendar.ics"');
+  res.send(buildCalendarFeed(items, name));
+}));
+
 // Serve the static frontend BEFORE anything touches the database, so the UI
 // always loads even if the database is misconfigured.
 app.use(express.static(path.join(__dirname, 'public')));
@@ -236,8 +304,6 @@ async function requireFinance(req, res, next) {
   });
 }
 
-// Wrap async route handlers so errors hit the global error handler.
-const ah = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 // ---- Officer sign-in (the only sign-in there is) ----
 app.post('/api/login', ipFloodLimiter, loginLimiter, ah(async (req, res) => {

@@ -458,3 +458,70 @@ button.m-help-card p{margin-bottom:0}
 .req-mark{color:#b91c1c;font-weight:800;margin-left:3px}
 .req-tag{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:4px;background:#fee2e2;color:#991b1b;font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;vertical-align:1px}
 .dialog-header .eyebrow .req-tag{font-size:10px}
+
+/* ============================================================
+   Month grid: the days themselves. Each entry has a colored edge and a small
+   icon for its kind (people for meetings, a flag for events, a clock for
+   deadlines). Phones show colored dots instead of text.
+   ============================================================ */
+#main .cal-cell{display:flex;flex-direction:column;gap:3px;min-height:92px;padding:5px;border-color:#e3e8ef;background:#fbfcfe}
+#main .cal-cell.has-items{background:#fff;border-color:#d6dde8}
+#main .cal-cell.cal-blank{background:transparent;border-color:transparent}
+#main .cal-cell.cal-clickable:hover{background:#f3f7fd}
+#main .cal-daynum{align-self:flex-start;min-width:20px;height:20px;padding:0 5px;margin-bottom:1px;border-radius:10px;font-size:11px;font-weight:700;line-height:20px;text-align:center;color:#6b7280}
+#main .cal-today{box-shadow:none;border-color:#d6dde8}
+#main .cal-today .cal-daynum{background:var(--fbla-blue);color:#fff}
+.day-entry{--entry:#1e40af;--entry-bg:#eef3fc;display:flex;align-items:flex-start;gap:4px;min-width:0;padding:3px 5px 3px 4px;border-left:3px solid var(--entry);border-radius:3px;background:var(--entry-bg);color:#1f2937}
+.day-entry.k-meeting{--entry:#1e4fb8;--entry-bg:#edf2fc}
+.day-entry.k-event{--entry:#15803d;--entry-bg:#ecf7f0}
+.day-entry.k-deadline{--entry:#b91c1c;--entry-bg:#fdefef}
+.day-entry.k-other{--entry-bg:#f4f0fa}
+.day-entry.k-other:not([style]){--entry:#7c3aed}
+.day-entry.is-cont{opacity:.7}
+.day-entry-icon{flex:0 0 12px;display:inline-flex;margin-top:1px;color:var(--entry)}
+.day-entry-icon svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.day-entry.k-other .day-entry-icon svg circle,.day-legend .k-other svg circle{fill:currentColor;stroke:none}
+.day-entry-text{display:flex;flex-direction:column;min-width:0}
+.day-entry-title{font-size:10.5px;font-weight:650;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.day-entry-time{font-size:9.5px;color:#6b7280;line-height:1.3}
+.day-more{padding-left:4px;font-size:10px;font-weight:650;color:var(--m-blue)}
+.day-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;font-size:11.5px;color:var(--m-muted)}
+.day-legend>span{display:inline-flex;align-items:center;gap:5px}
+.day-legend .k-meeting{--entry:#1e4fb8}.day-legend .k-event{--entry:#15803d}.day-legend .k-deadline{--entry:#b91c1c}.day-legend .k-other:not([style]){--entry:#7c3aed}
+.day-entries{display:flex;flex-direction:column;gap:3px;min-width:0}
+@media(max-width:780px){
+  #main .cal-cell{min-height:58px;padding:3px}
+  .day-entries{flex-direction:row;flex-wrap:wrap;padding-left:3px}
+  .day-entry{flex:0 0 auto;width:8px;height:8px;padding:0;border:0;border-radius:50%;background:var(--entry)}
+  .day-entries .day-entry-icon,.day-entry-text,.day-more{display:none}
+  .day-entries .day-entry.is-extra{display:block}
+  .day-legend .day-entry-icon{display:inline-flex}
+}
+/* On larger screens a busy day shows two entries and "+N more". */
+.day-entry.is-extra{display:none}
+
+/* Plain dialogs (form pop-up, Add to your calendar): title, text, buttons. */
+dialog.is-plain{width:min(440px,calc(100vw - 32px))}
+dialog.is-plain .dialog-header{padding:16px 18px 0}
+dialog.is-plain .dialog-header .eyebrow{display:none}
+dialog.is-plain .dialog-body{padding:0 22px 20px}
+dialog.is-plain .dialog-body h2{margin:-4px 0 10px;padding-right:24px;font-size:19px;color:var(--m-ink);letter-spacing:-.01em}
+dialog.is-plain .dialog-body p{margin:0 0 12px;font-size:13.5px;line-height:1.6;color:#374151}
+.plain-meta{font-size:12.5px!important;color:var(--m-muted)!important}
+.req-note{color:#b91c1c;font-weight:700}
+.plain-actions{display:flex;gap:8px;margin-top:16px}
+.plain-link{display:block;margin-top:12px;padding:0;border:0;background:none;color:var(--m-muted);font:inherit;font-size:12.5px;text-decoration:underline;cursor:pointer}
+.plain-link:hover{color:var(--m-ink)}
+
+/* Calendar page: the Add to your calendar button beside Month / List. */
+.cal-page-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.cal-page-actions .button{min-height:38px;padding:8px 12px;font-size:12.5px}
+.cal-sub-list{display:grid;gap:8px;margin-top:4px}
+.cal-sub{display:flex;flex-direction:column;gap:2px;padding:11px 13px;border:1px solid var(--m-line);border-radius:9px;color:var(--m-ink);text-decoration:none}
+.cal-sub:hover{border-color:#a9c6ef;background:#f7faff}
+.cal-sub strong{font-size:13.5px}
+.cal-sub span{font-size:12px;color:var(--m-muted)}
+@media(max-width:780px){.m-page-heading:has(.cal-page-actions){flex-wrap:wrap}.cal-page-actions{justify-content:flex-start}}
+dialog.is-plain{position:fixed}
+dialog.is-plain .dialog-header{position:absolute;top:10px;right:12px;padding:0}
+dialog.is-plain .dialog-body{padding-top:22px}

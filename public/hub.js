@@ -502,6 +502,26 @@ function calMeta(kind) {
   return { ...meta, cls: CAL_KIND_CLS[kind] || 'cal-other' };
 }
 const calStyle = (meta) => (meta.color ? ` style="background:${esc(meta.color)};border-color:${esc(meta.color)};color:#fff;"` : '');
+// Google Calendar sync brings every date in as an "event", so a synced date
+// with "meeting" in its name is shown as a meeting.
+const isMeeting = (c) => c.kind === 'meeting' || (c.kind === 'event' && c.source !== 'event' && /\bmeeting\b/i.test(c.title || ''));
+const DAY_ICONS = {
+  meeting: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="5" r="2.2"/><circle cx="11" cy="5" r="2.2"/><path d="M1.5 13c0-2.2 1.6-3.7 3.5-3.7S8.5 10.8 8.5 13M7.5 13c0-2.2 1.6-3.7 3.5-3.7s3.5 1.5 3.5 3.7"/></svg>',
+  event: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 14.5V2m0 .5h8l-1.8 3 1.8 3h-8"/></svg>',
+  deadline: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.8V8l2.2 1.4"/></svg>',
+  other: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/></svg>',
+};
+// One entry inside a day of the month grid.
+function dayEntry(it, ds) {
+  const kind = isMeeting(it) ? 'meeting' : (BUILTIN_KINDS[it.kind] ? it.kind : 'other');
+  const meta = kindMeta(it.kind);
+  const cont = it.date !== ds;
+  const style = meta.color && kind === 'other' ? ` style="--entry:${esc(meta.color)}"` : '';
+  return `<div class="day-entry k-${kind} ${cont ? 'is-cont' : ''}"${style} title="${esc(it.title)}${it.time ? ', ' + esc(fmtTime(it.time)) : ''}">
+    <span class="day-entry-icon">${DAY_ICONS[kind]}</span>
+    <span class="day-entry-text"><span class="day-entry-title">${cont ? '› ' : ''}${esc(it.title)}</span>${it.time && !cont ? `<span class="day-entry-time">${esc(fmtTime(it.time))}</span>` : ''}</span>
+  </div>`;
+}
 function calendarGridHTML() {
   const y = state.year, m = state.month;
   const startDow = new Date(y, m, 1).getDay();
@@ -512,13 +532,10 @@ function calendarGridHTML() {
   for (let d = 1; d <= daysInMonth; d++) {
     const ds = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const dayItems = itemsOn(ds);
-    cells += `<div class="cal-cell cal-clickable ${ds === today ? 'cal-today' : ''}" data-action="cal-day" data-value="${ds}" role="button" tabindex="0" aria-label="${esc(dateLabel(ds))}${dayItems.length ? `, ${dayItems.length} ${dayItems.length === 1 ? 'item' : 'items'}` : ''}">
+    const shown = dayItems.slice(0, 2);
+    cells += `<div class="cal-cell cal-clickable ${ds === today ? 'cal-today' : ''} ${dayItems.length ? 'has-items' : ''}" data-action="cal-day" data-value="${ds}" role="button" tabindex="0" aria-label="${esc(dateLabel(ds))}${dayItems.length ? `, ${dayItems.length} ${dayItems.length === 1 ? 'item' : 'items'}: ${esc(dayItems.map(i => i.title).join(', '))}` : ''}">
       <div class="cal-daynum">${d}</div>
-      ${dayItems.map(it => {
-        const meta = calMeta(it.kind);
-        const cont = it.date !== ds;
-        return `<div class="cal-item ${meta.cls} ${cont ? 'cal-cont' : ''}"${calStyle(meta)} title="${esc(it.title)}${it.description ? ': ' + esc(it.description) : ''}">${cont ? '<span class="cal-cont-arrow">›</span> ' : ''}${it.time && !cont ? `<span class="cal-time">${esc(fmtTime(it.time))}</span> ` : ''}${esc(it.title)}</div>`;
-      }).join('')}
+      ${dayItems.length ? `<div class="day-entries">${shown.map(it => dayEntry(it, ds)).join('')}${dayItems.slice(2).map(it => dayEntry(it, ds).replace('class="day-entry ', 'class="day-entry is-extra ')).join('')}${dayItems.length > shown.length ? `<div class="day-more">+${dayItems.length - shown.length} more</div>` : ''}</div>` : ''}
     </div>`;
   }
   return `
@@ -527,7 +544,7 @@ function calendarGridHTML() {
 }
 function calLegend() {
   const kinds = [['meeting', 'Meeting'], ['event', 'Event'], ['deadline', 'Deadline'], ['other', 'Other']];
-  return `<div class="cal-legend">${kinds.map(([k, l]) => `<span class="cal-item ${CAL_KIND_CLS[k]}">${l}</span>`).join('')}${customTypes().map(t => `<span class="cal-item cal-other" style="background:${esc(t.color || '#1462d9')};border-color:${esc(t.color || '#1462d9')};color:#fff;">${esc(t.label)}</span>`).join('')}</div>`;
+  return `<div class="day-legend">${kinds.map(([k, l]) => `<span class="k-${k}"><span class="day-entry-icon">${DAY_ICONS[k]}</span>${l}</span>`).join('')}${customTypes().map(t => `<span class="k-other" style="--entry:${esc(t.color || '#1462d9')}"><span class="day-entry-icon">${DAY_ICONS.other}</span>${esc(t.label)}</span>`).join('')}</div>`;
 }
 function calListRow(c) {
   const meta = calMeta(c.kind);
@@ -548,7 +565,7 @@ function renderCalendar() {
       <div class="cal-title" aria-live="polite">${MONTHS[state.month]} ${state.year}</div>
       <button class="btn small secondary" type="button" data-action="month-next" aria-label="Next month">Next &rsaquo;</button>
     </div>`;
-  const toggle = tabs(['Month', 'List'], state.calendarView === 'month' ? 'Month' : 'List', 'calendar-view', 'Calendar display');
+  const toggle = `<div class="cal-page-actions"><button class="button secondary" type="button" data-action="add-calendar">${icon('calendar')}Add to your calendar</button>${tabs(['Month', 'List'], state.calendarView === 'month' ? 'Month' : 'List', 'calendar-view', 'Calendar display')}</div>`;
   if (state.calendarView === 'list') {
     return `${heading('Calendar', 'Meetings, events, and deadlines in one place.', toggle)}
     <section class="m-section-card">
@@ -568,6 +585,22 @@ function renderCalendar() {
   </section>`;
 }
 
+// ---- Add to your calendar (subscribe to the chapter calendar) ----
+function showAddToCalendar() {
+  const https = `${location.origin}/calendar.ics`;
+  const webcal = https.replace(/^https?:/, 'webcal:');
+  const google = `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcal)}`;
+  const outlook = `https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(https)}&name=${encodeURIComponent(chapterName())}`;
+  openPlainDialog('Add to your calendar', `
+    <p>Subscribe once and every chapter meeting, event, and deadline shows up in your own calendar. New dates appear on their own.</p>
+    <div class="cal-sub-list">
+      <a class="cal-sub" href="${esc(google)}" target="_blank" rel="noopener"><strong>Google Calendar</strong><span>Opens Google Calendar to add it</span></a>
+      <a class="cal-sub" href="${esc(webcal)}"><strong>iPhone, iPad, or Mac</strong><span>Opens the Calendar app</span></a>
+      <a class="cal-sub" href="${esc(outlook)}" target="_blank" rel="noopener"><strong>Outlook</strong><span>Opens Outlook on the web</span></a>
+      <a class="cal-sub" href="/calendar.ics?download=1" download><strong>Download a file</strong><span>A one-time copy (.ics) for any calendar app</span></a>
+    </div>`);
+}
+
 // ---- Day popover: click a date to see its items next to the cell (V1) ----
 function closeCalPopover() {
   const pop = document.getElementById('cal-popover');
@@ -583,7 +616,7 @@ function showCalDayPopover(ds, cell) {
   const dayItems = itemsOn(ds);
   const label = new Date(ds + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   const rows = dayItems.map(it => {
-    const meta = calMeta(it.kind);
+    const meta = isMeeting(it) ? calMeta('meeting') : calMeta(it.kind);
     const range = it.end_date ? ` <span class="cal-pop-range">${esc(shortDate(it.date))} to ${esc(shortDate(it.end_date))}</span>` : '';
     return `<div class="cal-pop-item">
       <div class="cal-pop-line">
@@ -774,17 +807,15 @@ function maybePopupForm() {
   const next = (D().forms || []).find(f => f.popup && safeUrl(f.url) && !done.has(f.id) && !popupLater.has(f.id));
   if (!next) return;
   const past = next.due_date && next.due_date < todayISO();
-  openDialog(next.required ? '<span class="req-tag">Required</span>' : 'GOOGLE FORM', `${esc(next.title)}${reqMark(next)}`, `
-    ${next.description ? `<p class="dialog-lead">${esc(next.description)}</p>` : ''}
-    ${next.event_name || next.due_date ? `<dl class="dialog-facts">
-      ${next.event_name ? `<div><dt>For</dt><dd>${esc(next.event_name)}</dd></div>` : ''}
-      ${next.due_date ? `<div><dt>${past ? 'Was due' : 'Respond by'}</dt><dd>${esc(dateLabel(next.due_date))}</dd></div>` : ''}
-    </dl>` : ''}
-    <div class="dialog-actions">
-      <a class="button" href="${safeUrl(next.url)}" target="_blank" rel="noopener" data-action="popup-open" data-id="${next.id}">Open form ${icon('external')}<span class="sr-only"> (opens in a new tab)</span></a>
-      <button class="button secondary" type="button" data-action="popup-done" data-id="${next.id}">I've filled it out</button>
-      <button class="text-button" type="button" data-action="popup-later" data-id="${next.id}">Remind me later</button>
-    </div>`);
+  const meta = [next.required ? '<span class="req-note">Required</span>' : '', next.event_name ? esc(next.event_name) : '', next.due_date ? `${past ? 'Was due' : 'Due'} ${esc(shortDate(next.due_date))}` : ''].filter(Boolean);
+  openPlainDialog(esc(next.title), `
+    ${next.description ? `<p>${esc(next.description)}</p>` : ''}
+    ${meta.length ? `<p class="plain-meta">${meta.join(' · ')}</p>` : ''}
+    <div class="plain-actions">
+      <a class="button" href="${safeUrl(next.url)}" target="_blank" rel="noopener" data-action="popup-open" data-id="${next.id}">Open form<span class="sr-only"> (opens in a new tab)</span></a>
+      <button class="button secondary" type="button" data-action="popup-later" data-id="${next.id}">Not now</button>
+    </div>
+    <button class="plain-link" type="button" data-action="popup-done" data-id="${next.id}">I already filled this out</button>`);
   const openBtn = dialog.querySelector('[data-action="popup-open"]');
   if (openBtn) openBtn.focus();
 }
@@ -812,11 +843,17 @@ const dialog = $('#dialog');
 let returnFocus = null;
 function openDialog(kicker, title, body) {
   if (!dialog.open) returnFocus = document.activeElement;
+  dialog.classList.remove('is-plain');
   $('#dialog-content').innerHTML = `<div class="dialog-header"><p class="eyebrow">${kicker || ''}</p><button class="icon-button" data-action="dialog-close" type="button" aria-label="Close dialog">${icon('close')}</button></div><div class="dialog-body"><h2 id="dialog-title">${title}</h2>${body}</div>`;
   if (!dialog.open) dialog.showModal();
   document.body.style.overflow = 'hidden';
   const first = dialog.querySelector('input:not([type=hidden]), .dialog-body button, .dialog-body a, button');
   if (first) first.focus();
+}
+// A plainer dialog: just a title, a close button, and the content.
+function openPlainDialog(title, body) {
+  openDialog('', title, body);
+  dialog.classList.add('is-plain');
 }
 function closeDialog() {
   if (!dialog.open) return;
@@ -1190,6 +1227,7 @@ document.addEventListener('click', (event) => {
     case 'cal-day': showCalDayPopover(value, button); break;
     case 'cal-pop-close': closeCalPopover(); break;
     case 'download-item': downloadItem(id); break;
+    case 'add-calendar': showAddToCalendar(); break;
     // Opening the form counts as "later" (they may not finish it); they can
     // mark it done next time.
     case 'popup-open': dismissPopup(id, false); break;
