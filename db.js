@@ -1079,7 +1079,7 @@ async function listCalendar() {
   const merged = [];
   for (const c of items) {
     merged.push({
-      id: c.id, source: 'custom', kind: c.kind || 'meeting',
+      id: c.id, ref: `custom:${c.id}`, source: 'custom', kind: c.kind || 'meeting',
       title: c.title, date: c.date, end_date: c.end_date || null, time: c.time || null,
       location: c.location || null,
       description: c.description || null, created_by: c.created_by || null,
@@ -1088,21 +1088,21 @@ async function listCalendar() {
   for (const e of events) {
     if (e.date) {
       merged.push({
-        id: e.id, source: 'event', kind: 'event',
+        id: e.id, ref: `event:${e.id}`, source: 'event', kind: 'event',
         title: e.name, date: e.date, time: e.time || null, location: e.location || null,
         description: e.description || null, created_by: null,
       });
     }
     if (e.first_payment_due) {
       merged.push({
-        id: e.id, source: 'payment', kind: 'deadline',
+        id: e.id, ref: `pay1:${e.id}`, source: 'payment', kind: 'deadline',
         title: `${e.name}: first payment due`, date: e.first_payment_due, time: null,
         description: e.cost_per_member ? `$${e.cost_per_member} due` : null, created_by: null,
       });
     }
     if (e.second_payment_enabled && e.second_payment_due) {
       merged.push({
-        id: e.id, source: 'payment', kind: 'deadline',
+        id: e.id, ref: `pay2:${e.id}`, source: 'payment', kind: 'deadline',
         title: `${e.name}: second payment due`, date: e.second_payment_due, time: null,
         description: e.second_payment_amount ? `$${e.second_payment_amount} due` : null, created_by: null,
       });
@@ -1542,6 +1542,20 @@ function competitiveEvents(settings) {
   } catch (e) { /* fall back to the default list */ }
   return [...DEFAULT_COMPETITIVE_EVENTS];
 }
+// The blue home card's queue: calendar dates the officers lined up, in order,
+// as `ref`s from listCalendar ("custom:29", "event:3", "pay1:3", "pay2:3").
+function homeCardQueue(value) {
+  let list = value;
+  if (typeof list === 'string') { try { list = JSON.parse(list || '[]'); } catch { list = []; } }
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const ref of list) {
+    const r = String(ref || '').trim();
+    if (/^(custom|event|pay1|pay2):\d{1,9}$/.test(r) && !out.includes(r)) out.push(r);
+    if (out.length >= 30) break;
+  }
+  return out;
+}
 // The display settings the public hub needs. Nothing financial or internal.
 function publicConfig(s) {
   return {
@@ -1552,6 +1566,7 @@ function publicConfig(s) {
     home_card_desc: s.home_card_desc || '',
     home_card_button: s.home_card_button || '',
     home_card_link: s.home_card_link || '',
+    home_card_queue: homeCardQueue(s.home_card_queue),
   };
 }
 // Everything the public hub renders, in one read. Each list is reduced to the
@@ -1615,7 +1630,7 @@ async function systemStats() {
 }
 
 module.exports = {
-  BACKUP_COLLECTIONS, init, ensureFirebase,
+  BACKUP_COLLECTIONS, init, ensureFirebase, homeCardQueue,
   listEvents, getEvent, addEvent, updateEvent, deleteEvent, activeCountdowns,
   setOfficerPassword, getOfficerForAuth,
   requestPasswordReset, checkPasswordResetCode, completePasswordReset, passwordResetEmailEnabled,

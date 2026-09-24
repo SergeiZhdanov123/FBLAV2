@@ -397,6 +397,8 @@ function countdownBanners() {
 // in the blue "Coming up" card) ticks from here. `data-done` is what a clock
 // says once its moment has passed.
 function tickCountdowns() {
+  const card = document.querySelector('.m-priority-card[data-advance-at]');
+  if (card && Date.now() >= Number(card.dataset.advanceAt)) card.outerHTML = priorityCard();
   document.querySelectorAll('[data-target]').forEach(el => {
     const seconds = Math.max(0, Math.floor((Number(el.dataset.target) - Date.now()) / 1000));
     if (!seconds) { el.innerHTML = `<span class="m-cd-now">${esc(el.dataset.done || 'Happening now')}</span>`; return; }
@@ -405,8 +407,25 @@ function tickCountdowns() {
   });
 }
 
-// The big blue card: the officers' own message when they wrote one, otherwise
-// the next chapter meeting (or, failing that, the next thing on the calendar).
+// When a calendar item starts: its time, or the start of its day.
+const startsAt = (c) => new Date(`${c.date}T${c.time || '00:00'}:00`).getTime();
+// When an item stops being "current": a timed item at its start time, an
+// all-day item once its (last) day is over.
+const doneAt = (c) => (c.time ? startsAt(c) : new Date(`${c.end_date || c.date}T00:00:00`).getTime() + 86400000);
+// The officers' queue for the blue card (Customization > Home Card Queue): the
+// first queued date that hasn't started yet. Deleted dates are skipped.
+function queuedCardItem() {
+  const refs = cfg().home_card_queue || [];
+  if (!refs.length) return null;
+  const byRef = new Map(calendarItems().filter(c => c.ref).map(c => [c.ref, c]));
+  const now = Date.now();
+  return refs.map(r => byRef.get(r)).find(c => c && c.date && doneAt(c) > now) || null;
+}
+const CARD_EYEBROW = { meeting: 'NEXT CHAPTER MEETING', deadline: 'UPCOMING DEADLINE', event: 'UPCOMING EVENT' };
+
+// The big blue card: the officers' own message when they wrote one, then their
+// queue, otherwise the next chapter meeting (or the next thing on the calendar).
+// `data-advance-at` is when the card should move on; tickCountdowns redraws it.
 function priorityCard() {
   const c = cfg();
   if ((c.home_card_title || '').trim() || (c.home_card_desc || '').trim()) {
@@ -421,8 +440,10 @@ function priorityCard() {
         : `<a class="m-btn-light" href="#calendar">${esc(label)} →</a>`}
     </article>`;
   }
-  const next = upcoming();
-  const meeting = next.find(x => x.kind === 'meeting') || next[0];
+  const queued = queuedCardItem();
+  // Like the queue, a date leaves the card once it has started.
+  const next = upcoming().filter(c => doneAt(c) > Date.now());
+  const meeting = queued || next.find(x => x.kind === 'meeting') || next[0];
   if (!meeting) {
     return `<article class="m-priority-card">
       <div class="m-eyebrow"><span class="m-live-dot"></span>CHAPTER CALENDAR</div>
@@ -433,12 +454,14 @@ function priorityCard() {
   }
   const isMeeting = meeting.kind === 'meeting';
   // Count down to the start (its time, or the start of the day if it has none).
-  // Once it has started: a multi-day item is "happening now"; a single-day one
-  // is simply today.
+  // A timed date hands the card over at its start; an all-day one stays up for
+  // its day(s): "happening now" if it spans several days, otherwise "today".
   const target = new Date(`${meeting.date}T${meeting.time || '00:00'}:00`).getTime();
   const done = meeting.end_date && meeting.end_date >= todayISO() ? 'Happening now' : 'Today';
-  return `<article class="m-priority-card">
-    <div class="m-eyebrow"><span class="m-live-dot"></span>${isMeeting ? 'NEXT CHAPTER MEETING' : 'COMING UP'}</div>
+  const eyebrow = queued ? (CARD_EYEBROW[meeting.kind] || 'COMING UP') : (isMeeting ? 'NEXT CHAPTER MEETING' : 'COMING UP');
+  const advanceAt = doneAt(meeting);
+  return `<article class="m-priority-card" data-advance-at="${advanceAt}">
+    <div class="m-eyebrow"><span class="m-live-dot"></span>${eyebrow}</div>
     <h2>${esc(meeting.title)}</h2>
     ${meeting.description ? `<p>${esc(meeting.description)}</p>` : ''}
     <div class="m-priority-meta">

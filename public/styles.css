@@ -2012,3 +2012,16 @@ a.login-about { text-decoration: none; }
 
 /* Google Forms: the required mark. */
 .req-star { color: #b91c1c; font-weight: 800; margin-left: 2px; }
+
+/* Customization: Home Card Queue */
+.cz-q-list { list-style: none; margin: 0 0 12px; padding: 0; border: 1px solid var(--border); border-radius: 8px; }
+.cz-q-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-top: 1px solid var(--border-soft); }
+.cz-q-row:first-child { border-top: 0; }
+.cz-q-row.is-passed { opacity: .55; }
+.cz-q-num { flex: 0 0 22px; height: 22px; border-radius: 50%; background: #eef2f8; color: var(--fbla-blue); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.cz-q-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cz-q-meta { color: var(--muted); font-size: 12.5px; }
+.cz-q-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.cz-q-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.cz-q-add select { flex: 1 1 280px; min-width: 0; max-width: 520px; }
+@media (max-width: 640px) { .cz-q-row { flex-wrap: wrap; } .cz-q-actions { width: 100%; justify-content: flex-start; padding-left: 34px; } }

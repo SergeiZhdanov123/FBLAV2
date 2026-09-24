@@ -2674,6 +2674,12 @@ function renderCustomization() {
       <div class="settings-row"><button class="btn" onclick="saveCustomization()">Save</button></div>
     </div>
     <div class="panel">
+      <h3>Home Card Queue</h3>
+      <p style="color:var(--muted)">Line up calendar dates for the blue card. It counts down to the first one, and the moment that date starts it moves on to the next, with its own countdown. All-day dates stay up until their day is over. When the queue runs out, the card goes back to showing the next meeting.${(cfg.home_card_title || cfg.home_card_desc) ? ' <strong>The Home Card message above is set, so it shows instead of the queue until you clear it.</strong>' : ''}</p>
+      <div id="cz-queue"></div>
+      <div class="settings-row"><button class="btn" onclick="saveCardQueue()">Save Queue</button></div>
+    </div>
+    <div class="panel">
       <h3>Chapter Details</h3>
       <p style="color:var(--muted)">Rename the chapter and set the transaction categories your treasurer picks from, without touching any code.</p>
       <div class="form-row"><label>Chapter Name</label><input id="cz-name" value="${esc(chapterName())}" maxlength="80" /></div>
@@ -2696,7 +2702,72 @@ function renderCustomization() {
       <div class="settings-row"><button class="btn" onclick="saveCustomization()">Save Customization</button></div>
     </div>
     </div>`;
+  renderCardQueue();
 }
+
+// ----- Home Card Queue (edited here, saved with "Save Queue") -----
+let czQueue = null;
+const calDoneAt = (c) => (c.time ? new Date(`${c.date}T${c.time}:00`).getTime() : new Date(`${c.end_date || c.date}T00:00:00`).getTime() + 86400000);
+function calItemLabel(c) {
+  const d = new Date(c.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return `${d}${c.time ? ', ' + fmtTime(c.time) : ''}`;
+}
+function renderCardQueue() {
+  const box = $('#cz-queue');
+  if (!box) return;
+  if (!czQueue) czQueue = [...(chapterConfig().home_card_queue || [])];
+  const byRef = new Map((state.calendar || []).filter(c => c.ref).map(c => [c.ref, c]));
+  const now = Date.now();
+  const firstLive = czQueue.find(r => byRef.get(r) && calDoneAt(byRef.get(r)) > now);
+  const rows = czQueue.map((ref, i) => {
+    const c = byRef.get(ref);
+    const passed = !c || calDoneAt(c) <= now;
+    const status = !c ? 'Deleted from the calendar' : passed ? 'Already started, skipped' : ref === firstLive ? 'On the card now' : '';
+    return `<li class="cz-q-row${passed ? ' is-passed' : ''}">
+      <span class="cz-q-num">${i + 1}</span>
+      <span class="cz-q-main"><strong>${esc(c ? c.title : ref)}</strong><span class="cz-q-meta">${c ? `${esc(calItemLabel(c))} · ${esc(c.kind)}` : ''}${status ? ` · <em>${status}</em>` : ''}</span></span>
+      <span class="cz-q-actions">
+        <button class="btn small secondary" type="button" onclick="moveCardQueue(${i}, -1)" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button>
+        <button class="btn small secondary" type="button" onclick="moveCardQueue(${i}, 1)" ${i === czQueue.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button>
+        <button class="btn small danger" type="button" onclick="removeCardQueue(${i})">Remove</button>
+      </span>
+    </li>`;
+  }).join('');
+  const options = (state.calendar || []).filter(c => c.ref && c.date && calDoneAt(c) > now && !czQueue.includes(c.ref));
+  box.innerHTML = `
+    ${czQueue.length ? `<ol class="cz-q-list">${rows}</ol>` : '<p class="hint">Nothing queued. The card shows the next meeting on the calendar.</p>'}
+    <div class="cz-q-add">
+      <select id="cz-q-pick" aria-label="Calendar date to add">
+        ${options.length ? options.map(c => `<option value="${esc(c.ref)}">${esc(calItemLabel(c))} · ${esc(c.title)}</option>`).join('') : '<option value="">No upcoming dates to add</option>'}
+      </select>
+      <button class="btn small secondary" type="button" onclick="addCardQueue()" ${options.length ? '' : 'disabled'}>Add to queue</button>
+      ${czQueue.length > 1 ? '<button class="btn small secondary" type="button" onclick="sortCardQueue()">Sort by date</button>' : ''}
+    </div>`;
+}
+window.addCardQueue = function() {
+  const ref = $('#cz-q-pick') && $('#cz-q-pick').value;
+  if (ref && !czQueue.includes(ref)) czQueue.push(ref);
+  renderCardQueue();
+};
+window.removeCardQueue = function(i) { czQueue.splice(i, 1); renderCardQueue(); };
+window.moveCardQueue = function(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= czQueue.length) return;
+  [czQueue[i], czQueue[j]] = [czQueue[j], czQueue[i]];
+  renderCardQueue();
+};
+window.sortCardQueue = function() {
+  const byRef = new Map((state.calendar || []).map(c => [c.ref, c]));
+  const key = (r) => { const c = byRef.get(r); return c ? `${c.date}T${c.time || '00:00'}` : '9999'; };
+  czQueue.sort((a, b) => key(a).localeCompare(key(b)));
+  renderCardQueue();
+};
+window.saveCardQueue = async function() {
+  await api('PUT', '/api/settings/customization', { home_card_queue: czQueue || [] });
+  czQueue = null;
+  await loadAll(); render();
+  alert('Queue saved. The home page shows it the next time it loads.');
+};
 
 window.saveCustomization = async function() {
   const cats = $('#cz-cats').value.split('\n').map(s => s.trim()).filter(Boolean);

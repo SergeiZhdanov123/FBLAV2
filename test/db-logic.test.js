@@ -118,3 +118,11 @@ test('parseIcs converts Google\'s UTC times to the calendar\'s time zone', () =>
   assert.deepEqual([byUid['late@t'].date, byUid['late@t'].time], ['2026-10-06', '21:30']);
   assert.deepEqual([byUid['tzid@t'].date, byUid['tzid@t'].time], ['2026-10-15', '15:45']);
 });
+
+test('the home card queue keeps only valid calendar refs, in order', () => {
+  assert.deepEqual(db.homeCardQueue(['custom:29', 'pay1:3', 'custom:29', 'bogus', 'event:x', ' event:4 ']), ['custom:29', 'pay1:3', 'event:4']);
+  assert.deepEqual(db.homeCardQueue('["custom:1","custom:2"]'), ['custom:1', 'custom:2']);
+  assert.deepEqual(db.homeCardQueue('not json'), []);
+  assert.deepEqual(db.homeCardQueue(undefined), []);
+  assert.deepEqual(db.publicConfig({ home_card_queue: '["custom:7"]' }).home_card_queue, ['custom:7']);
+});

@@ -534,6 +534,7 @@ app.put('/api/settings/customization', requireOfficer, ah(async (req, res) => {
     await db.setSetting('home_card_link', /^https?:\/\//i.test(link) ? link : '');
     changed.push('home card link');
   }
+  if (b.home_card_queue !== undefined) { await db.setSetting('home_card_queue', JSON.stringify(db.homeCardQueue(b.home_card_queue))); changed.push('home card queue'); }
   if (b.chapter_name !== undefined) {
     await db.setSetting('chapter_name', String(b.chapter_name).trim().slice(0, 80));
     changed.push('name');
