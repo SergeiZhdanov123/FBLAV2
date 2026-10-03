@@ -855,11 +855,19 @@ app.delete('/api/signup/entries/:id', requireOfficer, sh(async (req, res) => {
   await db.logAudit(req.session.name, 'event_signup_remove', `${s.event_name}: ${s.people.map(p => p.name).join(', ')}`);
   res.json({ ok: true });
 }));
+// Exports: every event (even with no sign-ups) and who signed up.
+const exportName = (ext) => `event-signups-${new Date().toISOString().slice(0, 10)}.${ext}`;
 app.get('/api/signup/export.csv', requireOfficer, sh(async (req, res) => {
-  const csv = signup.signupsCsv(await signup.listSignups());
+  const csv = await signup.signupsCsv();
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="event-signups.csv"');
+  res.setHeader('Content-Disposition', `attachment; filename="${exportName('csv')}"`);
   res.send('\ufeff' + csv);
+}));
+app.get('/api/signup/export.xlsx', requireOfficer, sh(async (req, res) => {
+  const buf = await signup.signupsXlsx();
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${exportName('xlsx')}"`);
+  res.send(buf);
 }));
 app.get('/api/roster', requireOfficer, sh(async (req, res) => res.json(await signup.listRoster())));
 app.post('/api/roster', requireOfficer, sh(async (req, res) => {

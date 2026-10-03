@@ -241,9 +241,24 @@ test('db: with a member list, only listed members can sign up', skip, async () =
   assert.deepEqual(await su.checkName('kim knox', ev['Accounting'].id), { ok: true, name: 'Kim Knox' });
   assert.match((await su.checkName('Ivy', ev['Accounting'].id)).error, /Ivy Ink is already signed up for Introduction to Business Presentation/);
   // CSV export
-  const csv = su.signupsCsv(await su.listSignups());
-  assert.match(csv, /^"Event","Chapter project","Person 1"/);
+  const csv = await su.signupsCsv();
+  assert.match(csv, /^"Event","Type","People per entry","Allowed","Signed up","Spots left","Entry #","Person 1"/);
   assert.match(csv, /"Hal Hart"/);
+  const lines = csv.split('\r\n');
+  assert.ok(lines.some(l => l.startsWith('"Advanced Accounting","Individual","1","3","0","3",""')), 'events with no sign-ups are listed too');
+  // Excel: open the file and check the sheets
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await su.signupsXlsx());
+  assert.deepEqual(wb.worksheets.map(w => w.name), ['By event', 'Sign-ups', 'People', 'Not signed up yet']);
+  const byEvent = wb.getWorksheet('By event');
+  const names = new Set(); byEvent.eachRow((r, n) => { if (n > 1) names.add(r.getCell(1).value); });
+  assert.equal(names.size, 78, 'every event appears');
+  const people = wb.getWorksheet('People');
+  const hal = []; people.eachRow((r, n) => { if (r.getCell(1).value === 'Hal Hart') hal.push([r.getCell(2).value, r.getCell(5).value, r.getCell(6).value]); });
+  assert.deepEqual(hal, [['Business Law', '11', 'Yes']]);
+  const notSigned = []; wb.getWorksheet('Not signed up yet').eachRow((r, n) => { if (n > 1) notSigned.push(`${r.getCell(2).value} ${r.getCell(1).value}`); });
+  assert.ok(notSigned.includes('Kim Knox') && !notSigned.includes('Hal Hart'));
 });
 
 test('db: grade limit applies when the member list has the grade', skip, async () => {

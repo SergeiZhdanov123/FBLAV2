@@ -473,12 +473,81 @@ async function publicSignupState() {
   };
 }
 
-function signupsCsv(signups) {
+// ---------------------------------------------------------------------------
+// Export (officers): every event and who signed up, as CSV or an Excel file.
+// ---------------------------------------------------------------------------
+const typeText = (e) => (e.chapter ? 'Chapter project' : e.team ? 'Team' : 'Individual');
+const sizeText = (e) => (e.team ? (e.min_size === e.max_size ? `${e.max_size}` : `${e.min_size}-${e.max_size}`) : '1');
+async function exportData() {
+  const [events, signups, roster] = await Promise.all([listEvents(), listSignups(), listRoster()]);
+  const byEvent = new Map(events.map(e => [e.id, []]));
+  for (const s of signups) { if (!byEvent.has(s.event_id)) byEvent.set(s.event_id, []); byEvent.get(s.event_id).push(s); }
+  const maxPeople = Math.max(1, ...events.map(e => e.max_size), ...signups.map(s => s.people.length));
+  const offList = (s) => s.people.filter(p => p.on_roster === false).map(p => p.name).join('; ');
+  // One row per entry; events nobody has signed up for still get a row.
+  const byEventRows = [];
+  for (const e of events) {
+    const entries = byEvent.get(e.id) || [];
+    const base = [e.name, typeText(e), sizeText(e), e.max_entries, entries.length, Math.max(0, e.max_entries - entries.length)];
+    if (!entries.length) byEventRows.push([...base, '', ...Array(maxPeople).fill(''), '']);
+    entries.forEach((s, i) => byEventRows.push([...base, i + 1, ...Array.from({ length: maxPeople }, (_, k) => (s.people[k] ? s.people[k].name : '')), offList(s)]));
+  }
+  const byEventHead = ['Event', 'Type', 'People per entry', 'Allowed', 'Signed up', 'Spots left', 'Entry #', ...Array.from({ length: maxPeople }, (_, k) => `Person ${k + 1}`), 'Not on member list'];
+  const gradeOf = new Map(roster.map(m => [m.id, m.grade || '']));
+  const people = signups.flatMap(s => s.people.map(p => [p.name, s.event_name, s.chapter ? 'Chapter project' : (s.people.length > 1 || (events.find(e => e.id === s.event_id) || {}).team ? 'Team' : 'Individual'),
+    s.people.filter(x => x !== p).map(x => x.name).join(', '), p.roster_id ? gradeOf.get(p.roster_id) || '' : '', p.on_roster === null ? '' : p.on_roster ? 'Yes' : 'No']))
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  const signedIds = new Set(signups.flatMap(s => s.people.map(p => p.roster_id).filter(Boolean)));
+  const notSigned = roster.filter(m => !signedIds.has(m.id)).map(m => [m.last_name, m.first_name, m.preferred_name || '', m.grade || '']);
+  const entryRows = [...signups].sort((a, b) => a.event_name.localeCompare(b.event_name) || a.id - b.id)
+    .map(s => [s.event_name, s.people.map(p => p.name).join(', '), s.people.length, s.source === 'officer' ? `Officer: ${s.submitted_by || ''}` : 'Member, on the site', s.created_at || '', offList(s)]);
+  return {
+    byEvent: { head: byEventHead, rows: byEventRows },
+    entries: { head: ['Event', 'People', 'Team size', 'Signed up by', 'Signed up at', 'Not on member list'], rows: entryRows },
+    people: { head: ['Name', 'Event', 'Type', 'Teammates', 'Grade', 'On member list'], rows: people },
+    notSigned: roster.length ? { head: ['Last name', 'First name', 'Preferred name', 'Grade'], rows: notSigned } : null,
+  };
+}
+function toCsv(table) {
   const q = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
-  const max = Math.max(1, ...signups.map(s => s.people.length));
-  const head = ['Event', 'Chapter project', ...Array.from({ length: max }, (_, i) => `Person ${i + 1}`), 'Signed up by', 'Signed up at', 'Not on member list'];
-  const rows = signups.map(s => [s.event_name, s.chapter ? 'Yes' : '', ...Array.from({ length: max }, (_, i) => (s.people[i] ? s.people[i].name : '')), s.submitted_by || '', s.created_at || '', s.people.filter(p => p.on_roster === false).map(p => p.name).join('; ')]);
-  return [head, ...rows].map(r => r.map(q).join(',')).join('\r\n');
+  return [table.head, ...table.rows].map(r => r.map(q).join(',')).join('\r\n');
+}
+async function signupsCsv() {
+  return toCsv((await exportData()).byEvent);
+}
+async function signupsXlsx() {
+  const ExcelJS = require('exceljs');
+  const data = await exportData();
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'State High FBLA';
+  wb.created = new Date();
+  const sheet = (name, table, widths) => {
+    const ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 1 }] });
+    ws.addRow(table.head);
+    table.rows.forEach(r => ws.addRow(r));
+    const head = ws.getRow(1);
+    head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF12336D' } };
+    head.alignment = { vertical: 'middle' };
+    ws.columns.forEach((c, i) => {
+      const longest = Math.max(...[table.head, ...table.rows].map(r => String(r[i] == null ? '' : r[i]).length));
+      c.width = Math.min(widths || 48, Math.max(8, longest + 2));
+    });
+    if (table.rows.length) ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: table.head.length } };
+    return ws;
+  };
+  const ev = sheet('By event', data.byEvent);
+  // Shade full events and flag names not on the member list.
+  ev.eachRow((row, n) => {
+    if (n === 1) return;
+    if (row.getCell(6).value === 0) row.getCell(6).font = { bold: true, color: { argb: 'FFB91C1C' } };
+    const flag = row.getCell(data.byEvent.head.length);
+    if (flag.value) flag.font = { color: { argb: 'FFB91C1C' } };
+  });
+  sheet('Sign-ups', data.entries);
+  sheet('People', data.people);
+  if (data.notSigned) sheet('Not signed up yet', data.notSigned);
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
 module.exports = {
@@ -486,5 +555,5 @@ module.exports = {
   listRoster, addRosterMembers, updateRosterMember, deleteRosterMember, clearRoster,
   listEvents, addEvent, updateEvent, deleteEvent, loadDefaultEvents,
   checkName, createSignup, deleteSignup, listSignups, setOneEventOnly, settingsFlags,
-  publicSignupState, signupsCsv, DEFAULT_EVENTS, COLLECTIONS: C,
+  publicSignupState, exportData, signupsCsv, signupsXlsx, DEFAULT_EVENTS, COLLECTIONS: C,
 };

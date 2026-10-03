@@ -3264,8 +3264,9 @@ function renderEventSignup() {
       <div class="panel-head">
         <h3>Sign-ups (${s.signups.length})</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
-          <a class="btn small secondary" href="/api/signup/export.csv">Download CSV</a>
-          <button class="btn small" onclick="openSignupEntryForm()" ${s.events.length ? '' : 'disabled'}>+ Add a sign-up</button>
+          <a class="btn small" href="/api/signup/export.xlsx" title="Excel file: every event and who signed up, plus a People sheet">Download Excel (.xlsx)</a>
+          <a class="btn small secondary" href="/api/signup/export.csv" title="Every event and who signed up, one row per entry">Download CSV</a>
+          <button class="btn small secondary" onclick="openSignupEntryForm()" ${s.events.length ? '' : 'disabled'}>+ Add a sign-up</button>
         </div>
       </div>
       ${s.signups.length ? `<div class="table-scroll"><table>
