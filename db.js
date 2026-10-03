@@ -1567,6 +1567,8 @@ function publicConfig(s) {
     home_card_button: s.home_card_button || '',
     home_card_link: s.home_card_link || '',
     home_card_queue: homeCardQueue(s.home_card_queue),
+    // Hidden until an officer turns it on (Google Forms tab).
+    event_quiz_visible: s.event_quiz_visible === '1',
   };
 }
 // Everything the public hub renders, in one read. Each list is reduced to the

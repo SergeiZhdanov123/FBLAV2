@@ -2324,6 +2324,7 @@ function renderOfficerGoogleForms() {
   el.innerHTML = `
     <h2>Google Forms</h2>
     <p class="hint">Share a Google Form with the chapter: interest forms, trip paperwork, feedback. It shows on the Forms page of the site. <strong>Pop up</strong> makes a form open on screen when someone visits the site; they can open it, say they've filled it out, or be reminded next visit. Responses go to your Google account, and the hub never stores them. Set the form's own settings in Google (for example, whether it collects email addresses).</p>
+    ${eventQuizPanelHtml()}
     <div class="panel">
       <div class="panel-head">
         <h3>Forms on the hub</h3>
@@ -2337,6 +2338,29 @@ function renderOfficerGoogleForms() {
     </div>
   `;
 }
+
+// The Event Recommendation Quiz (built into the hub, not a Google Form).
+function eventQuizPanelHtml() {
+  const on = !!chapterConfig().event_quiz_visible;
+  return `
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Event Recommendation Quiz ${on ? '<span class="badge paid">On the site</span>' : '<span class="badge unpaid">Hidden</span>'}</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <a class="btn small secondary" href="/#event-quiz" target="_blank" rel="noopener">Preview ↗</a>
+          <button class="btn small ${on ? 'secondary' : ''}" onclick="setEventQuizVisible(${on ? 'false' : 'true'})">${on ? 'Hide from the site' : 'Make visible on the site'}</button>
+        </div>
+      </div>
+      <p class="hint" style="margin:0;">A 19-question quiz on the Forms page that recommends competitive events from the 2026-27 PA FBLA guidelines, based on how a member likes to work, what they're interested in, and their grade. Answers stay on the member's device; nothing is saved or sent to officers. ${on ? 'Members can take it now.' : 'Members can\'t see it until you make it visible. Preview works while you\'re signed in.'}</p>
+    </div>`;
+}
+window.setEventQuizVisible = async function(visible) {
+  try {
+    await api('PATCH', '/api/event-quiz', { visible });
+    if (state.config) state.config.event_quiz_visible = visible;
+    renderOfficerGoogleForms();
+  } catch (e) { alert(e.message); }
+};
 
 window.openGoogleFormForm = function(id) {
   const f = id ? (state.googleForms || []).find(x => x.id === id) : null;

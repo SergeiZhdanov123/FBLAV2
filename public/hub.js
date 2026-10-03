@@ -68,6 +68,7 @@ const RESOURCE_KINDS = {
 };
 const kindInfo = (kind) => RESOURCE_KINDS[kind] || RESOURCE_KINDS.slideshow;
 const PAGE_TITLES = Object.fromEntries(NAV.map(([id, , title]) => [id, title]));
+PAGE_TITLES['event-quiz'] = 'Event Quiz'; // linked from Forms; not in the menu
 
 const now = new Date();
 const state = {
@@ -682,10 +683,130 @@ function showCalDayPopover(ds, cell) {
 
 function renderForms() {
   const forms = D().forms || [];
+  const cards = (quizVisible() ? quizCard() : '') + forms.map(formCard).join('');
   return `${heading('Forms', 'Google Forms from the chapter.')}
   <section class="m-section-card">
-    ${forms.length ? `<div class="m-res-grid">${forms.map(formCard).join('')}</div>` : '<div class="empty-state"><h2>No forms right now.</h2></div>'}
+    ${cards ? `<div class="m-res-grid">${cards}</div>` : '<div class="empty-state"><h2>No forms right now.</h2></div>'}
   </section>`;
+}
+
+// ---------- Event Recommendation Quiz (event-quiz.js) ----------
+// Hidden until an officer turns it on. Signed-in officers can preview it while
+// it's hidden. Answers stay in this browser tab; nothing is sent anywhere.
+const quizVisible = () => !!cfg().event_quiz_visible;
+const QUIZ_KEY = 'fbla_event_quiz';
+function quizState() {
+  if (!state.quiz) {
+    let saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(QUIZ_KEY) || 'null'); } catch (e) { saved = null; }
+    state.quiz = saved && typeof saved === 'object' && saved.answers ? saved : { step: -1, answers: {} };
+  }
+  return state.quiz;
+}
+function saveQuiz() {
+  try { sessionStorage.setItem(QUIZ_KEY, JSON.stringify(state.quiz)); } catch (e) { /* storage blocked: fine */ }
+}
+function quizCard() {
+  return `<a class="res-card" href="#event-quiz">
+    <div class="res-cover res-art" aria-hidden="true">
+      <div class="art-form">
+        <span class="art-form-title">Which event fits you?</span>
+        <span class="art-form-q"></span>
+        <span class="art-radio"><i></i><b style="width:52%"></b></span>
+        <span class="art-radio"><i></i><b style="width:40%"></b></span>
+        <span class="art-radio"><i></i><b style="width:46%"></b></span>
+        <span class="art-submit">See my events</span>
+      </div>
+    </div>
+    <div class="res-body">
+      <span class="res-kicker">Competitive events</span>
+      <h2 class="res-title">Event Recommendation Quiz</h2>
+      <p class="res-desc">Answer 19 questions about how you like to work and what interests you, and get competitive events that may fit you.</p>
+      <div class="res-foot"><span class="res-open">Take the quiz →</span></div>
+    </div>
+  </a>`;
+}
+// The event's guide on Study & Prep, matched by name.
+function eventGuideUrl(name) {
+  const r = (D().resources || []).find(x => x.kind === 'resource' && (x.competitive_event === name || x.title === name) && x.url);
+  return r ? safeUrl(r.url) : '';
+}
+function renderEventQuiz() {
+  const Q = window.EventQuiz;
+  if (!quizVisible() && !state.isOfficer) {
+    if (state.isOfficer === undefined) {
+      // Officers signed in on this browser can preview the hidden quiz.
+      state.isOfficer = null;
+      fetch('/api/me').then(r => r.json()).then(me => { state.isOfficer = !!me.loggedIn; if (state.page === 'event-quiz') render(); }).catch(() => { state.isOfficer = false; });
+    }
+    return `${heading('Event Recommendation Quiz', 'Find competitive events that may fit you.')}
+    <section class="m-section-card"><div class="empty-state"><h2>${state.isOfficer === null ? 'Loading…' : "This quiz isn't open right now."}</h2>${state.isOfficer === null ? '' : '<p>Check back later, or ask an officer which events to look at.</p>'}</div></section>`;
+  }
+  if (!Q) return '<div class="hub-error"><h1>The quiz didn\'t load.</h1><p>Refresh the page and try again.</p></div>';
+  const qs = quizState();
+  const total = Q.QUESTIONS.length;
+  const preview = !quizVisible() ? '<p class="quiz-preview-note">Officer preview: members can\'t see this quiz until it\'s made visible in the officer portal (Google Forms).</p>' : '';
+  if (qs.step < 0) {
+    return `${heading('Event Recommendation Quiz', 'Find competitive events that may fit you.')}
+    <section class="m-section-card quiz">
+      ${preview}
+      <h2 class="quiz-h">Instructions</h2>
+      <p class="quiz-lead">Answer each question honestly - responses will be used to recommend competitive events that may fit your strengths, interests, and preferences. You are not required to choose one of the events recommended to you.</p>
+      <p class="quiz-small">${total} questions · about 5 minutes · your answers stay on this device.</p>
+      <button class="button" type="button" data-action="quiz-start">Start the quiz</button>
+    </section>`;
+  }
+  if (qs.step >= total) return quizResults(Q) ;
+  const q = Q.QUESTIONS[qs.step];
+  const chosen = qs.answers[q.id];
+  const n = qs.step + 1;
+  return `${heading('Event Recommendation Quiz', 'Find competitive events that may fit you.')}
+  <section class="m-section-card quiz">
+    ${preview}
+    <div class="quiz-progress" role="progressbar" aria-valuemin="1" aria-valuemax="${total}" aria-valuenow="${n}" aria-label="Question ${n} of ${total}"><span style="width:${Math.round(n / total * 100)}%"></span></div>
+    <p class="quiz-count">Question ${n} of ${total}</p>
+    <fieldset class="quiz-q">
+      <legend class="quiz-h">${esc(q.text)}</legend>
+      ${q.options.map(([v, label]) => `<label class="quiz-opt ${chosen === v ? 'is-on' : ''}"><input type="radio" name="quiz-${q.id}" value="${esc(v)}" ${chosen === v ? 'checked' : ''} /><span>${esc(label)}</span></label>`).join('')}
+    </fieldset>
+    <div class="quiz-nav">
+      <button class="button secondary" type="button" data-action="quiz-back">${n === 1 ? 'Back to instructions' : '← Back'}</button>
+      <button class="button" type="button" data-action="quiz-next" ${chosen === undefined ? 'disabled' : ''}>${n === total ? 'See my events' : 'Next →'}</button>
+    </div>
+  </section>`;
+}
+function quizResults(Q) {
+  const qs = quizState();
+  const ranked = Q.recommend(qs.answers);
+  const top = ranked.slice(0, 5), more = ranked.slice(5, 10);
+  const guide = (name) => { const u = eventGuideUrl(name); return u ? `<a class="quiz-link" href="${u}" target="_blank" rel="noopener">Event guide (PDF)<span class="sr-only"> for ${esc(name)}, opens in a new tab</span></a>` : ''; };
+  const card = (r, i) => `<li class="quiz-rec">
+    <div class="quiz-rec-head"><span class="quiz-rank">${i + 1}</span><div><h3>${esc(r.event.name)}</h3><p class="quiz-format">${esc(r.format)}${r.event.intro ? ' · 9th & 10th grade only' : ''}${r.event.fmt === 'chapter' ? ' · one team per chapter' : ''}</p></div></div>
+    <p class="quiz-desc">${esc(r.event.desc)}</p>
+    ${r.reasons.length ? `<p class="quiz-why-h">Why it may fit you</p><ul class="quiz-why">${r.reasons.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+    ${r.cautions.length ? `<p class="quiz-caution"><strong>Keep in mind:</strong> ${esc(r.cautions[0])}</p>` : ''}
+    ${guide(r.event.name)}
+  </li>`;
+  return `${heading('Your recommended events', 'Based on your answers to the Event Recommendation Quiz.')}
+  <section class="m-section-card quiz quiz-results">
+    <ol class="quiz-recs">${top.map(card).join('')}</ol>
+    <h2 class="quiz-h quiz-more-h">Also worth a look</h2>
+    <ul class="quiz-more">${more.map(r => `<li><strong>${esc(r.event.name)}</strong><span>${esc(r.format)}${r.event.intro ? ' · 9th & 10th grade only' : ''}</span>${guide(r.event.name)}</li>`).join('')}</ul>
+    <p class="quiz-small">You are not required to choose one of the events recommended to you. Every event's guide is on <a href="#prep">Study &amp; Prep</a>, and an officer can help you decide.</p>
+    <div class="quiz-nav">
+      <button class="button secondary" type="button" data-action="quiz-retake">Retake the quiz</button>
+      <button class="button secondary" type="button" data-action="officers">Ask an officer</button>
+    </div>
+  </section>`;
+}
+function quizGo(step) {
+  const qs = quizState();
+  qs.step = step;
+  saveQuiz();
+  render();
+  const h = $('#main .quiz-h, #main h1');
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
 }
 
 function renderUpdates() {
@@ -748,6 +869,7 @@ function prepResults() {
 function renderPrep() {
   return `${heading('Study &amp; Prep', 'Competitive-event guides, conference prep, and chapter study materials.')}
   <section class="m-section-card">
+    ${quizVisible() ? '<p class="quiz-pointer">Not sure which event to pick? <a href="#event-quiz">Take the Event Recommendation Quiz →</a></p>' : ''}
     <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="prep-search" type="search" placeholder="Search study materials, e.g. an event name" value="${esc(state.prepQuery)}" aria-label="Search study materials" /></label></div>
     <div id="prep-results">${prepResults()}</div>
   </section>`;
@@ -775,7 +897,7 @@ function render({ focus = false } = {}) {
   const title = PAGE_TITLES[state.page] || 'Home';
   $('#breadcrumb').textContent = title;
   document.title = `${title} · ${chapterName()}`;
-  const pages = { home: renderHome, calendar: renderCalendar, forms: renderForms, updates: renderUpdates, resources: renderResources, prep: renderPrep, general: renderGeneral };
+  const pages = { home: renderHome, calendar: renderCalendar, forms: renderForms, updates: renderUpdates, resources: renderResources, prep: renderPrep, general: renderGeneral, 'event-quiz': renderEventQuiz };
   const main = $('#main');
   main.innerHTML = (pages[state.page] || renderHome)();
   main.setAttribute('aria-busy', 'false');
@@ -1260,6 +1382,15 @@ document.addEventListener('click', (event) => {
     case 'popup-open': dismissPopup(id, false); break;
     case 'popup-done': dismissPopup(id, true); break;
     case 'popup-later': dismissPopup(id, false); break;
+    case 'quiz-start': quizGo(0); break;
+    case 'quiz-back': quizGo(quizState().step - 1); break;
+    case 'quiz-next': {
+      const qs = quizState();
+      const q = window.EventQuiz.QUESTIONS[qs.step];
+      if (q && qs.answers[q.id] !== undefined) quizGo(qs.step + 1);
+      break;
+    }
+    case 'quiz-retake': state.quiz = { step: -1, answers: {} }; quizGo(-1); break;
     default: break;
   }
 });
@@ -1269,6 +1400,18 @@ document.addEventListener('input', (event) => {
   if (t.id === 'resource-search') { state.resourceQuery = t.value; $('#resource-results').innerHTML = resourceResults(); }
   if (t.id === 'general-search') { state.generalQuery = t.value; $('#general-results').innerHTML = generalResults(); }
   if (t.id === 'prep-search') { state.prepQuery = t.value; $('#prep-results').innerHTML = prepResults(); }
+});
+document.addEventListener('change', (event) => {
+  const t = event.target;
+  if (t.matches && t.matches('.quiz-q input[type="radio"]')) {
+    const qs = quizState();
+    qs.answers[t.name.replace(/^quiz-/, '')] = t.value;
+    saveQuiz();
+    // Update in place (no re-render) so keyboard focus stays on the option.
+    t.closest('.quiz-q').querySelectorAll('.quiz-opt').forEach(l => l.classList.toggle('is-on', l.contains(t)));
+    const next = $('[data-action="quiz-next"]');
+    if (next) next.disabled = false;
+  }
 });
 document.addEventListener('submit', (event) => {
   if (event.target.id === 'officer-login-form') { event.preventDefault(); submitOfficerLogin(event.target); }

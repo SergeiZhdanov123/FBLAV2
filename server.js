@@ -767,6 +767,14 @@ app.patch('/api/google-forms/:id/popup', requireOfficer, ah(async (req, res) => 
     res.json(f);
   } catch (e) { res.status(400).json({ error: e.message }); }
 }));
+// The Event Recommendation Quiz on the hub's Forms page: hidden until an
+// officer makes it visible.
+app.patch('/api/event-quiz', requireOfficer, ah(async (req, res) => {
+  const visible = !!req.body.visible;
+  await db.setSetting('event_quiz_visible', visible ? '1' : '0');
+  await db.logAudit(req.session.name, 'event_quiz_visibility', visible ? 'Event Recommendation Quiz shown on the hub' : 'Event Recommendation Quiz hidden from the hub');
+  res.json({ visible });
+}));
 app.delete('/api/google-forms/:id', requireOfficer, ah(async (req, res) => {
   await db.deleteGoogleForm(req.params.id);
   await db.logAudit(req.session.name, 'google_form_delete', `id=${req.params.id}`);
