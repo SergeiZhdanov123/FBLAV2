@@ -69,6 +69,10 @@ const RESOURCE_KINDS = {
 const kindInfo = (kind) => RESOURCE_KINDS[kind] || RESOURCE_KINDS.slideshow;
 const PAGE_TITLES = Object.fromEntries(NAV.map(([id, , title]) => [id, title]));
 PAGE_TITLES['event-quiz'] = 'Event Quiz'; // linked from Forms; not in the menu
+// Event Sign-Up: in the menu only while officers have it open.
+const SIGNUP_NAV = ['signup', 'check', 'Event Sign-Up'];
+PAGE_TITLES.signup = 'Event Sign-Up';
+const signupOpen = () => !!cfg().event_signup_open;
 
 const now = new Date();
 const state = {
@@ -347,18 +351,20 @@ function updateBell() {
 
 // ---------- navigation ----------
 function renderNav() {
-  const groups = [['Overview', NAV.slice(0, 4)], ['Resources', NAV.slice(4, 7)]];
+  const overview = NAV.slice(0, 4);
+  if (signupOpen()) overview.splice(3, 0, SIGNUP_NAV); // after Forms
+  const groups = [['Overview', overview], ['Resources', NAV.slice(4, 7)]];
   const link = ([id, ic, title]) => `<a href="#${id}" class="m-nav-item ${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''} title="${esc(title)}">${icon(ic)}<span>${esc(title)}</span></a>`;
   $('#navigation').innerHTML = groups.map(([label, items]) =>
     `<p class="m-nav-label">${label}</p><nav class="m-nav" aria-label="${label}">${items.map(link).join('')}</nav>`).join('') +
     `<p class="m-nav-label">Chapter</p><nav class="m-nav" aria-label="Chapter"><a href="/about" data-action="about" class="m-nav-item" title="About the Chapter">${icon('about')}<span>About the Chapter</span></a></nav>`;
   $('#mobile-navigation').innerHTML = NAV.slice(0, 4).map(([id, ic, title]) =>
     `<a href="#${id}" class="${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}${esc(title)}</a>`).join('') +
-    `<button id="mobile-more" class="${NAV.slice(4).some(([id]) => id === state.page) ? 'active' : ''}" data-action="more-menu" type="button" aria-label="More pages" aria-haspopup="true" aria-expanded="false" aria-controls="m-more-menu">${icon('menu')}More</button>`;
+    `<button id="mobile-more" class="${NAV.slice(4).some(([id]) => id === state.page) || state.page === 'signup' ? 'active' : ''}" data-action="more-menu" type="button" aria-label="More pages" aria-haspopup="true" aria-expanded="false" aria-controls="m-more-menu">${icon('menu')}More</button>`;
   // The phone "More" menu (V1's pop-up above the bottom-right corner): the
   // pages that don't fit in the bottom bar, plus help and officer sign-in.
   const moreLink = ([id, ic, title]) => `<a href="#${id}" class="${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}${esc(title)}</a>`;
-  $('#m-more-menu').innerHTML = NAV.slice(4).map(moreLink).join('') +
+  $('#m-more-menu').innerHTML = (signupOpen() ? moreLink(SIGNUP_NAV) : '') + NAV.slice(4).map(moreLink).join('') +
     `<a href="/about" data-action="about">${icon('about')}About the Chapter</a>` +
     `<span class="m-more-sep" role="separator"></span>` +
     `<button type="button" data-action="officers">${icon('help')}Need help?</button>` +
@@ -809,6 +815,148 @@ function quizGo(step) {
   if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
 }
 
+// ---------- Event Sign-Up ----------
+// Live data (spots left) comes from /api/public/signup, not the cached hub
+// bundle. Every rule is enforced again on the server when someone submits.
+async function loadSignup() {
+  state.signupLoading = true;
+  try {
+    const res = await fetch('/api/public/signup', { headers: { Accept: 'application/json' } });
+    state.signupData = res.ok ? await res.json() : { open: false, events: [], error: true };
+  } catch (e) { state.signupData = { open: false, events: [], error: true }; }
+  state.signupLoading = false;
+  if (state.page === 'signup') render();
+}
+const spotsText = (e) => {
+  const left = Math.max(0, e.max_entries - e.taken);
+  // "1 of 2 spots left", "1 of 1 team left"
+  const unit = e.team ? (e.max_entries === 1 ? 'team' : 'teams') : (e.max_entries === 1 ? 'spot' : 'spots');
+  return `${left} of ${e.max_entries} ${unit} left`;
+};
+const teamText = (e) => (e.team ? (e.min_size === e.max_size ? `Teams of ${e.max_size}` : `Teams of ${e.min_size}-${e.max_size}`) : 'Individual');
+function renderSignup() {
+  const sd = state.signupData;
+  if (!sd || (state.signupLoading && !sd)) {
+    if (!state.signupLoading) loadSignup();
+    return `${heading('Event Sign-Up', 'Sign up for a competitive event.')}<section class="m-section-card"><div class="empty-state"><h2>Loading…</h2></div></section>`;
+  }
+  if (!sd.open && !sd.preview) {
+    return `${heading('Event Sign-Up', 'Sign up for a competitive event.')}
+    <section class="m-section-card"><div class="empty-state"><h2>${sd.error ? "Event sign-up didn't load." : "Event sign-up isn't open right now."}</h2><p>${sd.error ? 'Check your connection and refresh the page.' : 'Officers will open it when it is time to choose events.'}</p></div></section>`;
+  }
+  const q = (state.signupQuery || '').trim().toLowerCase();
+  const list = sd.events.filter(e => !q || e.name.toLowerCase().includes(q));
+  const row = (e) => {
+    const full = e.taken >= e.max_entries;
+    return `<li class="su-row ${full ? 'is-full' : ''}">
+      <div class="su-main"><strong>${esc(e.name)}</strong>
+        <span class="su-meta">${teamText(e)}${e.grades ? ' · 9th & 10th grade only' : ''} · ${full ? 'Full' : spotsText(e)}</span></div>
+      ${full ? '<span class="su-full">Full</span>' : `<button class="button secondary su-btn" type="button" data-action="signup-open" data-id="${e.id}">Sign up</button>`}
+    </li>`;
+  };
+  const section = (title, items) => items.length ? `<h2 class="su-h">${title}</h2><ul class="su-list">${items.map(row).join('')}</ul>` : '';
+  const ind = list.filter(e => !e.team && !e.chapter), team = list.filter(e => e.team && !e.chapter), chap = list.filter(e => e.chapter);
+  return `${heading('Event Sign-Up', 'Sign up for a competitive event, and add your teammates if it is a team event.')}
+  <section class="m-section-card su">
+    ${sd.preview ? '<p class="quiz-preview-note">Officer preview: sign-up is closed, so members can\'t see this page. Open it in the officer portal (Events > Event Sign-Up).</p>' : ''}
+    <ul class="su-rules">
+      <li>You can sign up for <strong>one</strong> individual or team event${sd.one_event_only ? '' : ', plus one chapter project'}.</li>
+      <li>For a team event, add your teammates. Everyone on the team is signed up together.</li>
+      <li>Once you're signed up, you can't sign up for another event here. Ask an officer if something needs to change.</li>
+      ${sd.member_list ? "<li>Use your name as it is on the chapter's FBLA member list. Your first name works on its own if no one else has it.</li>" : ''}
+    </ul>
+    <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="signup-search" type="search" placeholder="Search events" value="${esc(state.signupQuery || '')}" aria-label="Search events" /></label></div>
+    <div id="signup-results">${section('Individual events', ind) + section('Team events', team) + section('Chapter projects', chap) || '<div class="empty-state"><h2>No events match.</h2></div>'}</div>
+  </section>`;
+}
+// The sign-up dialog: enter names -> review who that is -> confirm.
+function signupEvent(id) { return ((state.signupData || {}).events || []).find(e => e.id === Number(id)); }
+function openSignupForm(id, keep) {
+  const e = signupEvent(id);
+  if (!e) return;
+  const f = keep && state.signupForm && state.signupForm.id === e.id ? state.signupForm : { id: e.id, names: [], checks: [] };
+  state.signupForm = f;
+  const fields = Array.from({ length: e.max_size }, (_, i) => {
+    const label = !e.team ? 'Your name' : i === 0 ? 'Your name' : `Teammate ${i}${i < e.min_size ? '' : ' (optional)'}`;
+    const c = f.checks[i];
+    return `<div class="su-field">
+      <label for="su-name-${i}">${label}</label>
+      <input id="su-name-${i}" class="su-name" data-index="${i}" maxlength="120" autocomplete="off" value="${esc(f.names[i] || '')}" placeholder="First and last name" ${i < e.min_size ? 'required' : ''} />
+      <p class="su-check ${c ? (c.ok ? 'ok' : 'bad') : ''}" id="su-check-${i}" aria-live="polite">${c ? esc(c.ok ? `✓ ${c.name}` : c.error) : ''}</p>
+    </div>`;
+  }).join('');
+  openPlainDialog(`Sign up: ${esc(e.name)}`, `
+    <p class="su-dmeta">${teamText(e)}${e.grades ? ' · 9th & 10th grade only' : ''} · ${spotsText(e)}</p>
+    <form id="signup-form" novalidate>
+      ${fields}
+      <p class="su-error" id="su-error" role="alert"></p>
+      <div class="su-actions"><button class="button" type="submit">Review sign-up</button></div>
+    </form>`);
+}
+async function checkSignupName(i) {
+  const f = state.signupForm, input = $(`#su-name-${i}`);
+  if (!f || !input) return null;
+  const name = input.value.trim();
+  f.names[i] = name;
+  const out = $(`#su-check-${i}`);
+  if (!name) { f.checks[i] = null; if (out) { out.textContent = ''; out.className = 'su-check'; } return null; }
+  let c;
+  try {
+    const res = await fetch('/api/public/signup/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, event_id: f.id }) });
+    c = await res.json();
+    if (!res.ok && !c.error) c = { ok: false, error: 'Could not check this name. Try again.' };
+  } catch (e) { c = { ok: false, error: 'Could not check this name. Check your connection.' }; }
+  if (($(`#su-name-${i}`) || {}).value !== undefined && $(`#su-name-${i}`).value.trim() !== name) return null; // typed again since
+  f.checks[i] = c;
+  if (out) { out.textContent = c.ok ? `✓ ${c.name}` : c.error; out.className = `su-check ${c.ok ? 'ok' : 'bad'}`; }
+  return c;
+}
+async function reviewSignup(form) {
+  const f = state.signupForm, e = signupEvent(f.id);
+  const err = $('#su-error'); err.textContent = '';
+  const inputs = [...form.querySelectorAll('.su-name')];
+  inputs.forEach((inp, i) => { f.names[i] = inp.value.trim(); });
+  for (let i = 0; i < e.min_size; i++) if (!f.names[i]) { err.textContent = i === 0 ? 'Enter your name.' : `${e.name} needs at least ${e.min_size} people. Add your teammates.`; inputs[i].focus(); return; }
+  const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Checking…';
+  const results = await Promise.all(inputs.map((inp, i) => (f.names[i] ? checkSignupName(i) : null)));
+  btn.disabled = false; btn.textContent = 'Review sign-up';
+  const bad = results.findIndex(r => r && !r.ok);
+  if (bad >= 0) { err.textContent = 'Fix the name marked above.'; inputs[bad].focus(); return; }
+  const names = results.filter(Boolean).map(r => r.name);
+  if (new Set(names).size !== names.length) { err.textContent = 'The same person is listed twice.'; return; }
+  f.resolved = names;
+  openPlainDialog(`Sign up: ${esc(e.name)}`, `
+    <p class="su-dmeta">Check that this is right. You won't be able to change it yourself after you confirm.</p>
+    <ul class="su-review">${names.map((n, i) => `<li><span>${i === 0 ? 'You' : `Teammate ${i}`}</span><strong>${esc(n)}</strong></li>`).join('')}</ul>
+    <p class="su-error" id="su-error" role="alert"></p>
+    <div class="su-actions">
+      <button class="button secondary" type="button" data-action="signup-back">← Edit names</button>
+      <button class="button" type="button" data-action="signup-confirm">Confirm sign-up</button>
+    </div>`);
+}
+async function confirmSignup(btn) {
+  const f = state.signupForm, e = signupEvent(f.id);
+  btn.disabled = true; btn.textContent = 'Signing up…';
+  let out, ok = false;
+  try {
+    const res = await fetch('/api/public/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: f.id, names: f.names.filter(Boolean) }) });
+    out = await res.json(); ok = res.ok;
+  } catch (err) { out = { error: 'Could not reach the site. Check your connection and try again.' }; }
+  if (!ok) {
+    btn.disabled = false; btn.textContent = 'Confirm sign-up';
+    $('#su-error').textContent = out.error || 'Something went wrong. Try again.';
+    loadSignup(); // spots may have changed
+    return;
+  }
+  state.signupForm = null;
+  openPlainDialog("You're signed up", `
+    <p class="su-done"><strong>${esc(out.event_name)}</strong></p>
+    <ul class="su-review">${out.people.map(p => `<li><strong>${esc(p.name)}</strong></li>`).join('')}</ul>
+    <p class="su-dmeta">This is saved. If anything needs to change, ask an officer.</p>
+    <div class="su-actions"><button class="button" type="button" data-action="dialog-close">Done</button></div>`);
+  loadSignup();
+}
+
 function renderUpdates() {
   const all = D().announcements || [];
   const cats = ['All', ...new Set(all.map(a => a.category || 'Chapter news'))];
@@ -897,7 +1045,7 @@ function render({ focus = false } = {}) {
   const title = PAGE_TITLES[state.page] || 'Home';
   $('#breadcrumb').textContent = title;
   document.title = `${title} · ${chapterName()}`;
-  const pages = { home: renderHome, calendar: renderCalendar, forms: renderForms, updates: renderUpdates, resources: renderResources, prep: renderPrep, general: renderGeneral, 'event-quiz': renderEventQuiz };
+  const pages = { home: renderHome, calendar: renderCalendar, forms: renderForms, updates: renderUpdates, resources: renderResources, prep: renderPrep, general: renderGeneral, 'event-quiz': renderEventQuiz, signup: renderSignup };
   const main = $('#main');
   main.innerHTML = (pages[state.page] || renderHome)();
   main.setAttribute('aria-busy', 'false');
@@ -914,6 +1062,7 @@ function route() {
   closeCalPopover();
   const page = location.hash.slice(1).split('/')[0];
   state.page = PAGE_TITLES[page] ? page : 'home';
+  if (state.page === 'signup') loadSignup();
   hideHubSearch();
   closeMenu();
   if (state.data) render({ focus: !!location.hash });
@@ -1382,6 +1531,9 @@ document.addEventListener('click', (event) => {
     case 'popup-open': dismissPopup(id, false); break;
     case 'popup-done': dismissPopup(id, true); break;
     case 'popup-later': dismissPopup(id, false); break;
+    case 'signup-open': openSignupForm(id); break;
+    case 'signup-back': openSignupForm(state.signupForm && state.signupForm.id, true); break;
+    case 'signup-confirm': confirmSignup(button); break;
     case 'quiz-start': quizGo(0); break;
     case 'quiz-back': quizGo(quizState().step - 1); break;
     case 'quiz-next': {
@@ -1400,6 +1552,21 @@ document.addEventListener('input', (event) => {
   if (t.id === 'resource-search') { state.resourceQuery = t.value; $('#resource-results').innerHTML = resourceResults(); }
   if (t.id === 'general-search') { state.generalQuery = t.value; $('#general-results').innerHTML = generalResults(); }
   if (t.id === 'prep-search') { state.prepQuery = t.value; $('#prep-results').innerHTML = prepResults(); }
+  if (t.id === 'signup-search') {
+    state.signupQuery = t.value;
+    const box = document.createElement('div'); box.innerHTML = renderSignup();
+    const fresh = box.querySelector('#signup-results'); if (fresh) $('#signup-results').innerHTML = fresh.innerHTML;
+  }
+  // Editing a name clears its old check result.
+  if (t.classList && t.classList.contains('su-name')) {
+    const i = Number(t.dataset.index), out = $(`#su-check-${i}`);
+    if (state.signupForm) state.signupForm.checks[i] = null;
+    if (out) { out.textContent = ''; out.className = 'su-check'; }
+  }
+});
+document.addEventListener('focusout', (event) => {
+  const t = event.target;
+  if (t.classList && t.classList.contains('su-name') && t.value.trim()) checkSignupName(Number(t.dataset.index));
 });
 document.addEventListener('change', (event) => {
   const t = event.target;
@@ -1415,6 +1582,7 @@ document.addEventListener('change', (event) => {
 });
 document.addEventListener('submit', (event) => {
   if (event.target.id === 'officer-login-form') { event.preventDefault(); submitOfficerLogin(event.target); }
+  if (event.target.id === 'signup-form') { event.preventDefault(); reviewSignup(event.target); }
 });
 document.addEventListener('keydown', (event) => {
   const day = event.target.closest && event.target.closest('[data-action="cal-day"]');

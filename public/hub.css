@@ -591,3 +591,33 @@ a.officer-link{text-decoration:none;min-height:32px;padding-bottom:2px}
 .quiz-pointer{margin:0 0 14px;font-size:13.5px;color:var(--m-ink)}
 .quiz-pointer a{color:var(--m-blue);font-weight:600}
 @media(max-width:780px){.quiz-desc,.quiz-why-h,.quiz-why,.quiz-caution,.quiz-link{margin-left:0}.quiz-more .quiz-link{margin-left:0}}
+
+/* Event Sign-Up */
+.su{max-width:860px}
+.su-rules{margin:0 0 16px;padding-left:18px;font-size:13.5px;line-height:1.65;color:var(--m-ink)}
+.su-h{font-size:15px;margin:18px 0 8px;color:var(--m-ink)}
+.su-list{list-style:none;margin:0;padding:0;border:1px solid var(--m-line);border-radius:8px}
+.su-row{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid var(--m-line)}
+.su-row:first-child{border-top:0}
+.su-row.is-full{background:#fafbfc}
+.su-row.is-full .su-main strong{color:var(--m-muted)}
+.su-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.su-main strong{font-size:14px;color:var(--m-ink)}
+.su-meta{font-size:12.5px;color:var(--m-muted)}
+.su-btn{min-height:34px;padding:6px 14px}
+.su-full{font-size:12.5px;font-weight:650;color:var(--m-muted);padding:0 6px}
+.su-dmeta{font-size:13px;color:var(--m-muted);margin:0 0 14px;line-height:1.5}
+.su-field{margin-bottom:10px}
+.su-field label{display:block;font-size:13px;font-weight:600;color:var(--m-ink);margin-bottom:4px}
+.su-field input{width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--m-line);border-radius:8px;font:inherit;font-size:14px}
+.su-field input:focus{outline:2px solid var(--m-blue);outline-offset:0;border-color:var(--m-blue)}
+.su-check{min-height:16px;margin:4px 0 0;font-size:12.5px}
+.su-check.ok{color:#15803d}
+.su-check.bad{color:#b91c1c}
+.su-error{min-height:18px;margin:6px 0 0;font-size:13px;color:#b91c1c}
+.su-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:10px}
+.su-review{list-style:none;margin:0 0 6px;padding:0;border:1px solid var(--m-line);border-radius:8px}
+.su-review li{display:flex;justify-content:space-between;gap:12px;padding:9px 12px;border-top:1px solid var(--m-line);font-size:14px}
+.su-review li:first-child{border-top:0}
+.su-review li span{color:var(--m-muted);font-size:12.5px}
+.su-done{font-size:15px;margin:0 0 10px}

@@ -504,6 +504,7 @@ async function loadAll() {
   state.slideshows = sh; state.announcements = ann;
   state.calendar = cal; state.googleForms = gf;
   try { state.email = await api('GET', '/api/email/status'); } catch (err) { state.email = null; }
+  try { [state.signup, state.roster] = await Promise.all([api('GET', '/api/signup'), api('GET', '/api/roster')]); } catch (err) { state.signup = null; state.roster = []; }
   // Officer accounts are President/Advisor-only; standard officers get a 403.
   state.officers = [];
   if (state.officerRole === 'president' || state.officerRole === 'advisor') {
@@ -520,6 +521,8 @@ function render() {
   renderEvents();
   renderOfficerCalendar();
   renderOfficerPrivateCalendar();
+  renderEventSignup();
+  renderMemberList();
   renderOfficerAnnouncements();
   renderOfficerGoogleForms();
   renderOfficerEmail();
@@ -3176,3 +3179,270 @@ async function deleteSlideshow(id) {
 }
 
 
+
+// =====================================================================
+// ===================== Event Sign-Up (officers) ======================
+// =====================================================================
+// Members sign up on the public hub; the rules are enforced on the server
+// (event-signup.js). Here officers open/close it, set up the events, and see,
+// add or remove sign-ups.
+let signupEventFilter = '';
+async function reloadSignup() {
+  [state.signup, state.roster] = await Promise.all([api('GET', '/api/signup'), api('GET', '/api/roster')]);
+  renderEventSignup();
+  renderMemberList();
+}
+const signupSizeText = (e) => (e.team ? (e.min_size === e.max_size ? `Teams of ${e.max_size}` : `Teams of ${e.min_size}-${e.max_size}`) : 'Individual');
+const signupAllowedText = (e) => `${e.max_entries} ${e.team ? (e.max_entries === 1 ? 'team' : 'teams') : (e.max_entries === 1 ? 'person' : 'people')}`;
+
+function renderEventSignup() {
+  const el = $('#tab-event-signup');
+  if (!el) return;
+  const s = state.signup;
+  if (!s) { el.innerHTML = '<h2>Event Sign-Up</h2><div class="panel"><div class="empty">Sign-up data did not load. Refresh the page.</div></div>'; return; }
+  const q = signupEventFilter.trim().toLowerCase();
+  const events = s.events.filter(e => !q || e.name.toLowerCase().includes(q));
+  const byEvent = new Map();
+  s.signups.forEach(x => { if (!byEvent.has(x.event_id)) byEvent.set(x.event_id, []); byEvent.get(x.event_id).push(x); });
+  const people = s.signups.reduce((n, x) => n + x.people.length, 0);
+  const offList = s.signups.flatMap(x => x.people).filter(p => p.on_roster === false).length;
+  const eventRow = (e) => `
+    <tr>
+      <td><strong>${esc(e.name)}</strong>${e.chapter ? ' <span class="badge neutral">Chapter project</span>' : ''}${e.grades ? ' <span class="badge neutral">9th-10th only</span>' : ''}</td>
+      <td>${signupSizeText(e)}</td>
+      <td>${signupAllowedText(e)}</td>
+      <td>${e.taken >= e.max_entries ? `<span class="badge overdue">Full (${e.taken})</span>` : `${e.taken} of ${e.max_entries}`}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn small secondary" onclick="openSignupEventForm(${e.id})">Edit</button>
+        <button class="btn small danger" onclick="deleteSignupEvent(${e.id})">Remove</button>
+      </td>
+    </tr>`;
+  const signupRow = (x) => `
+    <tr>
+      <td><strong>${esc(x.event_name)}</strong></td>
+      <td>${x.people.map(p => `${esc(p.name)}${p.on_roster === false ? ' <span class="badge overdue" title="This name is not on the FBLA member list">Not on member list</span>' : ''}`).join('<br/>')}</td>
+      <td>${x.source === 'officer' ? `Added by ${esc(x.submitted_by || 'an officer')}` : 'Signed up on the site'}<br/><span class="muted">${esc(x.created_at || '')}</span></td>
+      <td><button class="btn small danger" onclick="deleteSignupEntry(${x.id})">Remove</button></td>
+    </tr>`;
+  const sortedSignups = [...s.signups].sort((a, b) => a.event_name.localeCompare(b.event_name) || a.id - b.id);
+  el.innerHTML = `
+    <h2>Event Sign-Up</h2>
+    <p class="hint">Members sign up for competitive events on the site's Event Sign-Up page (no account needed) and add their teammates. Each person can only be signed up once, events can't go over their limit, and once the FBLA Member List has names, only those members can sign up. Everything is saved as it happens.</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Sign-up on the site ${s.open ? '<span class="badge paid">Open</span>' : '<span class="badge unpaid">Closed</span>'}</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <a class="btn small secondary" href="/#signup" target="_blank" rel="noopener">Preview ↗</a>
+          <button class="btn small ${s.open ? 'secondary' : ''}" onclick="setSignupOpen(${s.open ? 'false' : 'true'})" ${!s.open && !s.events.length ? 'disabled title="Add events first"' : ''}>${s.open ? 'Close sign-up' : 'Open sign-up on the site'}</button>
+        </div>
+      </div>
+      <div style="margin:10px 0 8px;">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px;">How many events each person can sign up for</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;"><input type="radio" name="su-rule" style="width:auto;margin:0;" ${s.strict ? '' : 'checked'} onchange="setSignupRule(false)" /> One individual or team event, plus one chapter project (FBLA's rule)</label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;"><input type="radio" name="su-rule" style="width:auto;margin:0;" ${s.strict ? 'checked' : ''} onchange="setSignupRule(true)" /> One event total</label>
+        </div>
+      </div>
+      <p class="hint" style="margin:0;">${s.roster_count ? `<strong>${s.roster_count}</strong> names on the FBLA Member List: only they can sign up.` : 'The FBLA Member List is empty, so anyone can sign up with a first and last name. Add the list under <a href="#" onclick="switchTab(\'member-list\');return false;">FBLA Member List</a>.'} ${s.signups.length} sign-ups, ${people} people${offList ? `, <strong style="color:var(--danger)">${offList} not on the member list</strong>` : ''}.</p>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Events (${s.events.length})</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn small secondary" onclick="loadDefaultSignupEvents()">Load 2026-27 PA FBLA events</button>
+          <button class="btn small" onclick="openSignupEventForm()">+ Add event</button>
+        </div>
+      </div>
+      ${s.events.length ? `
+        <input id="su-event-filter" type="search" placeholder="Filter events" value="${esc(signupEventFilter)}" oninput="signupEventFilter=this.value;renderEventSignup();const f=$('#su-event-filter');f.focus();f.setSelectionRange(f.value.length,f.value.length);" style="max-width:320px;margin-bottom:10px;" />
+        <div class="table-scroll"><table>
+          <thead><tr><th>Event</th><th>Type</th><th>Allowed per chapter</th><th>Signed up</th><th></th></tr></thead>
+          <tbody>${events.map(eventRow).join('') || '<tr><td colspan="5" class="muted">No events match.</td></tr>'}</tbody>
+        </table></div>` : '<div class="empty">No events yet. <strong>Load 2026-27 PA FBLA events</strong> adds all 78 events with the entry limits and team sizes from the PA FBLA guidelines; you can edit or remove any of them.</div>'}
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Sign-ups (${s.signups.length})</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <a class="btn small secondary" href="/api/signup/export.csv">Download CSV</a>
+          <button class="btn small" onclick="openSignupEntryForm()" ${s.events.length ? '' : 'disabled'}>+ Add a sign-up</button>
+        </div>
+      </div>
+      ${s.signups.length ? `<div class="table-scroll"><table>
+        <thead><tr><th>Event</th><th>People</th><th>How</th><th></th></tr></thead>
+        <tbody>${sortedSignups.map(signupRow).join('')}</tbody>
+      </table></div>` : '<div class="empty">No one has signed up yet.</div>'}
+    </div>`;
+}
+
+window.setSignupOpen = async function(open) {
+  if (open && !confirm('Open event sign-up? Members will see the Event Sign-Up page on the site and can sign up right away.')) return;
+  try { await api('PATCH', '/api/signup/settings', { open }); if (state.config) state.config.event_signup_open = open; await reloadSignup(); }
+  catch (e) { alert(e.message); }
+};
+window.setSignupRule = async function(oneEventOnly) {
+  try { await api('PATCH', '/api/signup/settings', { one_event_only: oneEventOnly }); }
+  catch (e) { alert(e.message); }
+  await reloadSignup();
+};
+window.loadDefaultSignupEvents = async function() {
+  try {
+    const r = await api('POST', '/api/signup/events/load-defaults');
+    await reloadSignup();
+    alert(r.added ? `Added ${r.added} events.${r.already ? ` ${r.already} were already in the list.` : ''}` : 'All 78 PA FBLA events are already in the list.');
+  } catch (e) { alert(e.message); }
+};
+window.openSignupEventForm = function(id) {
+  const e = id ? (state.signup.events || []).find(x => x.id === id) : null;
+  if (id && !e) { alert('That event is no longer in the list.'); return; }
+  showModal(e ? 'Edit event' : 'Add event', `
+    <div class="form-row"><label>Event name</label><input id="se-name" maxlength="120" value="${e ? esc(e.name) : ''}" placeholder="e.g. Marketing" /></div>
+    <div class="form-row"><label>Type</label>
+      <select id="se-team" onchange="document.getElementById('se-sizes').style.display=this.value==='1'?'':'none';document.getElementById('se-allowed-label').textContent=this.value==='1'?'Teams allowed per chapter':'People allowed per chapter';">
+        <option value="0" ${e && e.team ? '' : 'selected'}>Individual event</option>
+        <option value="1" ${e && e.team ? 'selected' : ''}>Team event</option>
+      </select>
+    </div>
+    <div id="se-sizes" class="form-row" style="${e && e.team ? '' : 'display:none;'}">
+      <label>People per team</label>
+      <div style="display:flex;align-items:center;gap:8px;"><input id="se-min" type="number" min="1" max="10" value="${e ? e.min_size : 1}" style="max-width:90px;" /> to <input id="se-max" type="number" min="1" max="10" value="${e ? e.max_size : 3}" style="max-width:90px;" /></div>
+      <span class="hint" style="margin-top:4px;">Most PA FBLA team events are 1 to 3 (a team of 1 is allowed). Parliamentary Procedure is 4 to 5.</span>
+    </div>
+    <div class="form-row"><label id="se-allowed-label">${e && e.team ? 'Teams allowed per chapter' : 'People allowed per chapter'}</label><input id="se-allowed" type="number" min="1" max="50" value="${e ? e.max_entries : 3}" style="max-width:120px;" /></div>
+    <div class="form-row"><label style="display:flex;align-items:center;gap:8px;font-weight:400;"><input id="se-chapter" type="checkbox" style="width:auto;" ${e && e.chapter ? 'checked' : ''} /> Chapter project (counts separately from a member's one individual/team event)</label></div>
+    <div class="form-row"><label style="display:flex;align-items:center;gap:8px;font-weight:400;"><input id="se-grades" type="checkbox" style="width:auto;" ${e && e.grades ? 'checked' : ''} /> 9th and 10th graders only</label></div>
+  `, async () => {
+    const team = $('#se-team').value === '1';
+    const body = { name: $('#se-name').value.trim(), team, min_size: team ? Number($('#se-min').value) : 1, max_size: team ? Number($('#se-max').value) : 1, max_entries: Number($('#se-allowed').value), chapter: $('#se-chapter').checked, grades: $('#se-grades').checked ? '9-10' : null };
+    if (e) await api('PUT', '/api/signup/events/' + e.id, body);
+    else await api('POST', '/api/signup/events', body);
+    await reloadSignup();
+    return true;
+  });
+};
+window.deleteSignupEvent = async function(id) {
+  const e = (state.signup.events || []).find(x => x.id === id);
+  if (!e || !confirm(`Remove ${e.name} from Event Sign-Up?`)) return;
+  try { await api('DELETE', '/api/signup/events/' + id); await reloadSignup(); } catch (err) { alert(err.message); }
+};
+window.openSignupEntryForm = function() {
+  const events = (state.signup.events || []).filter(e => e.taken < e.max_entries);
+  if (!events.length) { alert('Every event is full.'); return; }
+  showModal('Add a sign-up', `
+    <p class="hint" style="margin-top:0;">Officers can add sign-ups even while sign-up is closed. The same rules apply: one event per person, the event's limit, team size, and the member list.</p>
+    <div class="form-row"><label>Event</label>
+      <select id="sx-event" onchange="renderSignupEntryNames()">
+        ${events.map(e => `<option value="${e.id}">${esc(e.name)} (${signupSizeText(e)}, ${e.max_entries - e.taken} left)</option>`).join('')}
+      </select>
+    </div>
+    <div id="sx-names"></div>
+  `, async () => {
+    const names = [...$$('#sx-names input')].map(i => i.value.trim()).filter(Boolean);
+    await api('POST', '/api/signup/entries', { event_id: Number($('#sx-event').value), names });
+    await reloadSignup();
+    return true;
+  }, 'Add sign-up');
+  renderSignupEntryNames();
+};
+window.renderSignupEntryNames = function() {
+  const e = (state.signup.events || []).find(x => x.id === Number($('#sx-event').value));
+  if (!e) return;
+  $('#sx-names').innerHTML = Array.from({ length: e.max_size }, (_, i) => `
+    <div class="form-row"><label>${e.team ? (i === 0 ? 'Person 1' : `Person ${i + 1}${i < e.min_size ? '' : ' (optional)'}`) : 'Name'}</label><input maxlength="120" placeholder="First and last name" /></div>`).join('');
+};
+window.deleteSignupEntry = async function(id) {
+  const x = (state.signup.signups || []).find(s => s.id === id);
+  if (!x || !confirm(`Remove this sign-up for ${x.event_name} (${x.people.map(p => p.name).join(', ')})? They will be able to sign up again.`)) return;
+  try { await api('DELETE', '/api/signup/entries/' + id); await reloadSignup(); } catch (e) { alert(e.message); }
+};
+
+// ---------------------------- FBLA Member List ----------------------------
+let rosterFilter = '';
+function renderMemberList() {
+  const el = $('#tab-member-list');
+  if (!el) return;
+  const roster = state.roster || [];
+  const signedUp = new Map();
+  ((state.signup && state.signup.signups) || []).forEach(s => s.people.forEach(p => { if (p.roster_id) signedUp.set(p.roster_id, [...(signedUp.get(p.roster_id) || []), s.event_name]); }));
+  const q = rosterFilter.trim().toLowerCase();
+  const rows = roster.filter(m => !q || `${m.first_name} ${m.last_name} ${m.preferred_name || ''}`.toLowerCase().includes(q));
+  el.innerHTML = `
+    <h2>FBLA Member List</h2>
+    <p class="hint">The chapter's registered FBLA members. While this list is empty, anyone can use Event Sign-Up with a first and last name. Once it has names, <strong>only members on this list can sign up</strong>. Members can type their full name, or just their first name if nobody else shares it, and the site matches it to this list (ignoring capitals, accents and punctuation). Add a preferred name (e.g. Bobby for Robert) so that works too. With a grade, 11th and 12th graders can't sign up for the 9th-10th grade events.</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Members (${roster.length})</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn small secondary" onclick="openRosterImport()">Import a list</button>
+          <button class="btn small" onclick="openRosterForm()">+ Add member</button>
+          ${roster.length ? '<button class="btn small danger" onclick="clearRosterList()">Clear list</button>' : ''}
+        </div>
+      </div>
+      ${roster.length ? `
+        <input id="roster-filter" type="search" placeholder="Search members" value="${esc(rosterFilter)}" oninput="rosterFilter=this.value;renderMemberList();const f=$('#roster-filter');f.focus();f.setSelectionRange(f.value.length,f.value.length);" style="max-width:320px;margin-bottom:10px;" />
+        <div class="table-scroll"><table>
+          <thead><tr><th>Last name</th><th>First name</th><th>Preferred name</th><th>Grade</th><th>Signed up for</th><th></th></tr></thead>
+          <tbody>${rows.map(m => `<tr>
+            <td>${esc(m.last_name)}</td><td>${esc(m.first_name)}</td><td>${esc(m.preferred_name || '')}</td><td>${esc(m.grade || '')}</td>
+            <td>${(signedUp.get(m.id) || []).map(esc).join(', ') || '<span class="muted">-</span>'}</td>
+            <td style="white-space:nowrap;"><button class="btn small secondary" onclick="openRosterForm(${m.id})">Edit</button> <button class="btn small danger" onclick="deleteRosterMember(${m.id})">Remove</button></td>
+          </tr>`).join('') || '<tr><td colspan="6" class="muted">No members match.</td></tr>'}</tbody>
+        </table></div>` : '<div class="empty">No members yet. Use <strong>Import a list</strong> to paste everyone at once.</div>'}
+    </div>`;
+}
+window.openRosterForm = function(id) {
+  const m = id ? (state.roster || []).find(x => x.id === id) : null;
+  showModal(m ? 'Edit member' : 'Add member', `
+    <div class="form-row"><label>First name</label><input id="rm-first" maxlength="60" value="${m ? esc(m.first_name) : ''}" /></div>
+    <div class="form-row"><label>Last name</label><input id="rm-last" maxlength="60" value="${m ? esc(m.last_name) : ''}" /></div>
+    <div class="form-row"><label>Preferred name (optional)</label><input id="rm-pref" maxlength="60" value="${m ? esc(m.preferred_name || '') : ''}" placeholder="e.g. Bobby" /></div>
+    <div class="form-row"><label>Grade (optional)</label><select id="rm-grade"><option value="">Not set</option>${['9', '10', '11', '12'].map(g => `<option value="${g}" ${m && m.grade === g ? 'selected' : ''}>${g}th</option>`).join('')}</select></div>
+  `, async () => {
+    const body = { first_name: $('#rm-first').value, last_name: $('#rm-last').value, preferred_name: $('#rm-pref').value, grade: $('#rm-grade').value };
+    if (m) await api('PUT', '/api/roster/' + m.id, body);
+    else await api('POST', '/api/roster', body);
+    await reloadSignup();
+    return true;
+  });
+};
+window.deleteRosterMember = async function(id) {
+  const m = (state.roster || []).find(x => x.id === id);
+  if (!m || !confirm(`Remove ${m.first_name} ${m.last_name} from the member list? Any sign-up they're in stays, but will be marked "Not on member list".`)) return;
+  try { await api('DELETE', '/api/roster/' + id); await reloadSignup(); } catch (e) { alert(e.message); }
+};
+window.clearRosterList = async function() {
+  const n = (state.roster || []).length;
+  const typed = prompt(`This removes all ${n} members from the list (sign-ups stay). Type CLEAR to confirm.`);
+  if (typed !== 'CLEAR') return;
+  try { await api('DELETE', '/api/roster', { confirm: true }); await reloadSignup(); } catch (e) { alert(e.message); }
+};
+window.openRosterImport = function() {
+  showModal('Import FBLA members', `
+    <p class="hint" style="margin-top:0;">Paste one of these:</p>
+    <ul class="hint" style="margin:0 0 10px;padding-left:18px;line-height:1.6;">
+      <li>One name per line: <code>Jane Doe</code> or <code>Doe, Jane</code></li>
+      <li>Rows copied from a spreadsheet (or a CSV) with a header row: <code>First Name</code>, <code>Last Name</code>, and optionally <code>Grade</code> and <code>Preferred Name</code></li>
+    </ul>
+    <div class="form-row"><textarea id="ri-text" rows="10" placeholder="First Name,Last Name,Grade&#10;Jane,Doe,10&#10;Alex,Smith,11"></textarea></div>
+    <div id="ri-preview"></div>
+  `, async () => {
+    const text = $('#ri-text').value;
+    const preview = await api('POST', '/api/roster/import', { text, dry_run: true });
+    if (!preview.rows.length && !preview.problems.length) { alert('Paste the list first.'); return false; }
+    if (!$('#ri-preview').dataset.for || $('#ri-preview').dataset.for !== text) {
+      // First click: show what will be imported.
+      $('#ri-preview').dataset.for = text;
+      $('#ri-preview').innerHTML = `
+        <p style="margin:6px 0;"><strong>${preview.rows.length}</strong> member${preview.rows.length === 1 ? '' : 's'} ready to import${preview.problems.length ? `, <strong style="color:var(--danger)">${preview.problems.length} line${preview.problems.length === 1 ? '' : 's'} to fix</strong>` : ''}. Check the first and last names below, then click Import again.</p>
+        ${preview.problems.map(p => `<div class="login-error" style="margin:4px 0;">Line ${p.line} "${esc(p.text)}": ${esc(p.error)}</div>`).join('')}
+        <div class="table-scroll" style="max-height:220px;overflow:auto;"><table><thead><tr><th>First</th><th>Last</th><th>Preferred</th><th>Grade</th></tr></thead>
+        <tbody>${preview.rows.slice(0, 300).map(r => `<tr><td>${esc(r.first_name)}</td><td>${esc(r.last_name)}</td><td>${esc(r.preferred_name || '')}</td><td>${esc(r.grade || '')}</td></tr>`).join('')}</tbody></table></div>`;
+      return false;
+    }
+    if (preview.problems.length) { alert('Fix the lines listed above (or delete them), then import.'); return false; }
+    const r = await api('POST', '/api/roster/import', { text });
+    await reloadSignup();
+    alert(`Added ${r.added} member${r.added === 1 ? '' : 's'}.${r.skipped.length ? ` ${r.skipped.length} already on the list: ${r.skipped.slice(0, 10).join(', ')}${r.skipped.length > 10 ? '...' : ''}` : ''}`);
+    return true;
+  }, 'Import');
+};

@@ -402,6 +402,11 @@ async function ensureIndexes() {
   const specs = [
     ['officers', { name_lower: 1 }, { unique: true, name: 'uniq_officer_name_lower', partialFilterExpression: { name_lower: { $type: 'string' } } }],
     ['officers', { email: 1 }, { unique: true, name: 'uniq_officer_email', partialFilterExpression: { email: { $type: 'string' } } }],
+    // Event Sign-Up (event-signup.js). Person claims are unique by _id.
+    ['signup_events', { name_lower: 1 }, { unique: true, name: 'uniq_signup_event_name', partialFilterExpression: { name_lower: { $type: 'string' } } }],
+    ['signups', { event_id: 1 }, { name: 'signups_by_event' }],
+    ['signup_claims', { signup_id: 1 }, { name: 'claims_by_signup' }],
+    ['member_roster', { key: 1 }, { name: 'roster_by_key' }],
   ];
   for (const [coll, keys, opts] of specs) {
     try {
@@ -910,6 +915,7 @@ const BACKUP_COLLECTIONS = Object.freeze([
   'deposit_slips', 'purchase_orders', 'slideshows', 'announcements',
   'calendar_items', 'officer_calendar_items', 'google_forms',
   'officers', 'counters',
+  'signup_events', 'signups', 'signup_claims', 'member_roster',
 ]);
 
 async function backupJson() {
@@ -1569,6 +1575,8 @@ function publicConfig(s) {
     home_card_queue: homeCardQueue(s.home_card_queue),
     // Hidden until an officer turns it on (Google Forms tab).
     event_quiz_visible: s.event_quiz_visible === '1',
+    // Event Sign-Up page: shown on the hub only while officers have it open.
+    event_signup_open: s.event_signup_open === '1',
   };
 }
 // Everything the public hub renders, in one read. Each list is reduced to the
@@ -1632,7 +1640,7 @@ async function systemStats() {
 }
 
 module.exports = {
-  BACKUP_COLLECTIONS, init, ensureFirebase, homeCardQueue,
+  BACKUP_COLLECTIONS, init, ensureFirebase, homeCardQueue, nextId, tsString,
   listEvents, getEvent, addEvent, updateEvent, deleteEvent, activeCountdowns,
   setOfficerPassword, getOfficerForAuth,
   requestPasswordReset, checkPasswordResetCode, completePasswordReset, passwordResetEmailEnabled,

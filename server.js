@@ -775,6 +775,125 @@ app.patch('/api/event-quiz', requireOfficer, ah(async (req, res) => {
   await db.logAudit(req.session.name, 'event_quiz_visibility', visible ? 'Event Recommendation Quiz shown on the hub' : 'Event Recommendation Quiz hidden from the hub');
   res.json({ visible });
 }));
+// ---- Event Sign-Up (event-signup.js) ----
+// Members sign up from the public hub (no accounts); officers manage the
+// events, the sign-ups, and the registered FBLA member list.
+const signup = require('./event-signup');
+const signupLimiter = rateLimit(30, 10 * 60 * 1000);
+const nameCheckLimiter = rateLimit(200, 10 * 60 * 1000);
+// Send a SignupError as JSON with its status; anything else is a real error.
+const sh = (fn) => ah(async (req, res, next) => {
+  try { await fn(req, res, next); } catch (e) {
+    if (e instanceof signup.SignupError) return res.status(e.status).json({ error: e.message, field: e.field });
+    throw e;
+  }
+});
+// Public: the events and how full they are (no names). While sign-up is
+// closed only signed-in officers (previewing) get the list.
+app.get('/api/public/signup', sh(async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const st = await signup.publicSignupState();
+  const officer = !!(req.session && req.session.name && await refreshOfficerSession(req));
+  if (!st.open && !officer) return res.json({ open: false, events: [] });
+  res.json({ ...st, preview: !st.open });
+}));
+app.post('/api/public/signup/check', ipFloodLimiter, nameCheckLimiter, sh(async (req, res) => {
+  res.json(await signup.checkName(String((req.body || {}).name || '').slice(0, 120), (req.body || {}).event_id));
+}));
+app.post('/api/public/signup', ipFloodLimiter, signupLimiter, sh(async (req, res) => {
+  const b = req.body || {};
+  const names = Array.isArray(b.names) ? b.names.slice(0, 12).map(n => String(n || '').slice(0, 120)) : [];
+  const out = await signup.createSignup({ eventId: b.event_id, names, source: 'member' });
+  await db.logAudit(out.people[0].name, 'event_signup', `${out.event_name}: ${out.people.map(p => p.name).join(', ')} (from the hub)`);
+  res.json(out);
+}));
+// Officers
+app.get('/api/signup', requireOfficer, sh(async (req, res) => {
+  const [flags, events, signups, roster] = await Promise.all([signup.settingsFlags(), signup.listEvents(), signup.listSignups(), signup.listRoster()]);
+  res.json({ ...flags, events, signups, roster_count: roster.length });
+}));
+app.patch('/api/signup/settings', requireOfficer, sh(async (req, res) => {
+  const b = req.body || {};
+  if (b.open !== undefined) {
+    await db.setSetting('event_signup_open', b.open ? '1' : '0');
+    await db.logAudit(req.session.name, 'event_signup_open', b.open ? 'Opened event sign-up on the hub' : 'Closed event sign-up');
+  }
+  if (b.one_event_only !== undefined) {
+    await signup.setOneEventOnly(!!b.one_event_only);
+    await db.logAudit(req.session.name, 'event_signup_rule', b.one_event_only ? 'Sign-up rule: one event total' : 'Sign-up rule: one individual/team event + one chapter project');
+  }
+  res.json(await signup.settingsFlags());
+}));
+app.post('/api/signup/events', requireOfficer, sh(async (req, res) => {
+  const e = await signup.addEvent(req.body || {});
+  await db.logAudit(req.session.name, 'signup_event_add', e.name);
+  res.json(e);
+}));
+app.post('/api/signup/events/load-defaults', requireOfficer, sh(async (req, res) => {
+  const r = await signup.loadDefaultEvents();
+  await db.logAudit(req.session.name, 'signup_event_load', `Loaded ${r.added} PA FBLA events`);
+  res.json(r);
+}));
+app.put('/api/signup/events/:id', requireOfficer, sh(async (req, res) => {
+  const e = await signup.updateEvent(req.params.id, req.body || {});
+  await db.logAudit(req.session.name, 'signup_event_update', `${e.name}: ${e.team ? `teams of ${e.min_size}-${e.max_size}` : 'individual'}, ${e.max_entries} allowed`);
+  res.json(e);
+}));
+app.delete('/api/signup/events/:id', requireOfficer, sh(async (req, res) => {
+  const e = await signup.deleteEvent(req.params.id);
+  await db.logAudit(req.session.name, 'signup_event_delete', e.name);
+  res.json({ ok: true });
+}));
+app.post('/api/signup/entries', requireOfficer, sh(async (req, res) => {
+  const b = req.body || {};
+  const out = await signup.createSignup({ eventId: b.event_id, names: Array.isArray(b.names) ? b.names : [], source: 'officer', byName: req.session.name });
+  await db.logAudit(req.session.name, 'event_signup', `${out.event_name}: ${out.people.map(p => p.name).join(', ')} (added by an officer)`);
+  res.json(out);
+}));
+app.delete('/api/signup/entries/:id', requireOfficer, sh(async (req, res) => {
+  const s = await signup.deleteSignup(req.params.id);
+  await db.logAudit(req.session.name, 'event_signup_remove', `${s.event_name}: ${s.people.map(p => p.name).join(', ')}`);
+  res.json({ ok: true });
+}));
+app.get('/api/signup/export.csv', requireOfficer, sh(async (req, res) => {
+  const csv = signup.signupsCsv(await signup.listSignups());
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="event-signups.csv"');
+  res.send('\ufeff' + csv);
+}));
+app.get('/api/roster', requireOfficer, sh(async (req, res) => res.json(await signup.listRoster())));
+app.post('/api/roster', requireOfficer, sh(async (req, res) => {
+  const r = await signup.addRosterMembers([req.body || {}], req.session.name);
+  if (!r.added) return res.status(400).json({ error: `${r.skipped[0]} is already on the list.` });
+  await db.logAudit(req.session.name, 'roster_add', `${(req.body || {}).first_name} ${(req.body || {}).last_name}`);
+  res.json(r);
+}));
+// Paste/CSV import. dry_run returns what would be added without saving.
+app.post('/api/roster/import', requireOfficer, sh(async (req, res) => {
+  const { rows, problems } = signup.parseRosterText(String((req.body || {}).text || '').slice(0, 500000));
+  if ((req.body || {}).dry_run) return res.json({ rows, problems });
+  if (problems.length) return res.status(400).json({ error: `Fix ${problems.length} line${problems.length === 1 ? '' : 's'} first.`, problems });
+  const r = await signup.addRosterMembers(rows, req.session.name);
+  await db.logAudit(req.session.name, 'roster_import', `Added ${r.added} members${r.skipped.length ? `, ${r.skipped.length} already on the list` : ''}`);
+  res.json(r);
+}));
+app.put('/api/roster/:id', requireOfficer, sh(async (req, res) => {
+  const m = await signup.updateRosterMember(req.params.id, req.body || {});
+  await db.logAudit(req.session.name, 'roster_update', `${m.first_name} ${m.last_name}`);
+  res.json(m);
+}));
+app.delete('/api/roster/:id', requireOfficer, sh(async (req, res) => {
+  const m = await signup.deleteRosterMember(req.params.id);
+  await db.logAudit(req.session.name, 'roster_delete', `${m.first_name} ${m.last_name}`);
+  res.json({ ok: true });
+}));
+app.delete('/api/roster', requireOfficer, sh(async (req, res) => {
+  if (!(req.body || {}).confirm) return res.status(400).json({ error: 'Confirm to clear the whole list.' });
+  const n = await signup.clearRoster();
+  await db.logAudit(req.session.name, 'roster_clear', `Cleared the member list (${n} members)`);
+  res.json({ removed: n });
+}));
+
 app.delete('/api/google-forms/:id', requireOfficer, ah(async (req, res) => {
   await db.deleteGoogleForm(req.params.id);
   await db.logAudit(req.session.name, 'google_form_delete', `id=${req.params.id}`);
