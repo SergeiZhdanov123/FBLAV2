@@ -844,30 +844,56 @@ function renderSignup() {
     return `${heading('Event Sign-Up', 'Sign up for a competitive event.')}
     <section class="m-section-card"><div class="empty-state"><h2>${sd.error ? "Event sign-up didn't load." : "Event sign-up isn't open right now."}</h2><p>${sd.error ? 'Check your connection and refresh the page.' : 'Officers will open it when it is time to choose events.'}</p></div></section>`;
   }
-  const q = (state.signupQuery || '').trim().toLowerCase();
-  const list = sd.events.filter(e => !q || e.name.toLowerCase().includes(q));
-  const row = (e) => {
-    const full = e.taken >= e.max_entries;
-    return `<li class="su-row ${full ? 'is-full' : ''}">
-      <div class="su-main"><strong>${esc(e.name)}</strong>
-        <span class="su-meta">${teamText(e)}${e.grades ? ' · 9th & 10th grade only' : ''} · ${full ? 'Full' : spotsText(e)}</span></div>
-      ${full ? '<span class="su-full">Full</span>' : `<button class="button secondary su-btn" type="button" data-action="signup-open" data-id="${e.id}">Sign up</button>`}
-    </li>`;
-  };
-  const section = (title, items) => items.length ? `<h2 class="su-h">${title}</h2><ul class="su-list">${items.map(row).join('')}</ul>` : '';
-  const ind = list.filter(e => !e.team && !e.chapter), team = list.filter(e => e.team && !e.chapter), chap = list.filter(e => e.chapter);
   return `${heading('Event Sign-Up', 'Sign up for a competitive event, and add your teammates if it is a team event.')}
   <section class="m-section-card su">
     ${sd.preview ? '<p class="quiz-preview-note">Officer preview: sign-up is closed, so members can\'t see this page. Open it in the officer portal (Events > Event Sign-Up).</p>' : ''}
-    <ul class="su-rules">
-      <li>You can sign up for <strong>one</strong> individual or team event${sd.one_event_only ? '' : ', plus one chapter project'}.</li>
-      <li>For a team event, add your teammates. Everyone on the team is signed up together.</li>
-      <li>Once you're signed up, you can't sign up for another event here. Ask an officer if something needs to change.</li>
-      ${sd.member_list ? "<li>Use your name as it is on the chapter's FBLA member list. Your first name works on its own if no one else has it.</li>" : ''}
-    </ul>
-    <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="signup-search" type="search" placeholder="Search events" value="${esc(state.signupQuery || '')}" aria-label="Search events" /></label></div>
-    <div id="signup-results">${section('Individual events', ind) + section('Team events', team) + section('Chapter projects', chap) || '<div class="empty-state"><h2>No events match.</h2></div>'}</div>
+    <div class="su-info">
+      <strong>How it works</strong>
+      <ul>
+        <li>Sign up for <strong>one</strong> individual or team event${sd.one_event_only ? '' : ', plus one chapter project'}.</li>
+        <li>For a team event, add your teammates. Everyone on the team is signed up together.</li>
+        <li>Once you're signed up, you can't change it here. Ask an officer.</li>
+        ${sd.member_list ? "<li>Use your name as it is on the chapter's FBLA member list. Your first name works if no one else has it.</li>" : ''}
+      </ul>
+    </div>
+    <div class="su-toolbar">
+      <label class="input-wrap su-search">${icon('search')}<input id="signup-search" type="search" placeholder="Search events" value="${esc(state.signupQuery || '')}" aria-label="Search events" /></label>
+      <div class="su-filters" role="group" aria-label="Show">
+        ${[['all', 'All'], ['individual', 'Individual'], ['team', 'Team'], ['chapter', 'Chapter projects']].map(([v, l]) => `<button type="button" class="su-chip ${(state.signupFilter || 'all') === v ? 'is-on' : ''}" data-action="signup-filter" data-value="${v}" aria-pressed="${(state.signupFilter || 'all') === v}">${l}</button>`).join('')}
+      </div>
+      <label class="su-hidefull"><input type="checkbox" id="signup-hidefull" ${state.signupHideFull ? 'checked' : ''} /> Hide full events</label>
+    </div>
+    <div id="signup-results">${signupResults()}</div>
   </section>`;
+}
+function signupResults() {
+  const sd = state.signupData || { events: [] };
+  const q = (state.signupQuery || '').trim().toLowerCase();
+  const filter = state.signupFilter || 'all';
+  const kind = (e) => (e.chapter ? 'chapter' : e.team ? 'team' : 'individual');
+  const list = sd.events.filter(e => (!q || e.name.toLowerCase().includes(q))
+    && (filter === 'all' || kind(e) === filter)
+    && !(state.signupHideFull && e.taken >= e.max_entries));
+  const card = (e) => {
+    const left = Math.max(0, e.max_entries - e.taken);
+    const status = left === 0 ? 'full' : left === 1 ? 'low' : 'open';
+    return `<li class="su-card is-${status}">
+      <div class="su-card-top">
+        <strong class="su-name-t">${esc(e.name)}</strong>
+        <span class="su-pill is-${status}">${left === 0 ? 'Full' : `${left} left`}</span>
+      </div>
+      <p class="su-meta">${teamText(e)}${e.grades ? ' · 9th-10th only' : ''}</p>
+      <div class="su-card-foot">
+        <span class="su-count">${e.taken} of ${e.max_entries} ${e.team ? (e.max_entries === 1 ? 'team' : 'teams') : (e.max_entries === 1 ? 'spot' : 'spots')} taken</span>
+        ${left === 0 ? '' : `<button class="button su-btn" type="button" data-action="signup-open" data-id="${e.id}">Sign up</button>`}
+      </div>
+    </li>`;
+  };
+  const group = (title, items) => items.length ? `<h2 class="su-h">${title} <span>${items.length}</span></h2><ul class="su-grid">${items.map(card).join('')}</ul>` : '';
+  const html = filter === 'all'
+    ? group('Individual events', list.filter(e => kind(e) === 'individual')) + group('Team events', list.filter(e => kind(e) === 'team')) + group('Chapter projects', list.filter(e => kind(e) === 'chapter'))
+    : (list.length ? `<ul class="su-grid">${list.map(card).join('')}</ul>` : '');
+  return html || '<div class="empty-state"><h2>No events match.</h2></div>';
 }
 // The sign-up dialog: enter names -> review who that is -> confirm.
 function signupEvent(id) { return ((state.signupData || {}).events || []).find(e => e.id === Number(id)); }
@@ -1532,6 +1558,11 @@ document.addEventListener('click', (event) => {
     case 'popup-done': dismissPopup(id, true); break;
     case 'popup-later': dismissPopup(id, false); break;
     case 'signup-open': openSignupForm(id); break;
+    case 'signup-filter':
+      state.signupFilter = value;
+      document.querySelectorAll('.su-chip').forEach(c => { const on = c.dataset.value === value; c.classList.toggle('is-on', on); c.setAttribute('aria-pressed', String(on)); });
+      $('#signup-results').innerHTML = signupResults();
+      break;
     case 'signup-back': openSignupForm(state.signupForm && state.signupForm.id, true); break;
     case 'signup-confirm': confirmSignup(button); break;
     case 'quiz-start': quizGo(0); break;
@@ -1552,11 +1583,7 @@ document.addEventListener('input', (event) => {
   if (t.id === 'resource-search') { state.resourceQuery = t.value; $('#resource-results').innerHTML = resourceResults(); }
   if (t.id === 'general-search') { state.generalQuery = t.value; $('#general-results').innerHTML = generalResults(); }
   if (t.id === 'prep-search') { state.prepQuery = t.value; $('#prep-results').innerHTML = prepResults(); }
-  if (t.id === 'signup-search') {
-    state.signupQuery = t.value;
-    const box = document.createElement('div'); box.innerHTML = renderSignup();
-    const fresh = box.querySelector('#signup-results'); if (fresh) $('#signup-results').innerHTML = fresh.innerHTML;
-  }
+  if (t.id === 'signup-search') { state.signupQuery = t.value; $('#signup-results').innerHTML = signupResults(); }
   // Editing a name clears its old check result.
   if (t.classList && t.classList.contains('su-name')) {
     const i = Number(t.dataset.index), out = $(`#su-check-${i}`);
@@ -1570,6 +1597,7 @@ document.addEventListener('focusout', (event) => {
 });
 document.addEventListener('change', (event) => {
   const t = event.target;
+  if (t.id === 'signup-hidefull') { state.signupHideFull = t.checked; $('#signup-results').innerHTML = signupResults(); return; }
   if (t.matches && t.matches('.quiz-q input[type="radio"]')) {
     const qs = quizState();
     qs.answers[t.name.replace(/^quiz-/, '')] = t.value;
