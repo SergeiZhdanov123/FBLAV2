@@ -752,7 +752,7 @@ function renderEventQuiz() {
       ${preview}
       <h2 class="quiz-h">Instructions</h2>
       <p class="quiz-lead">Answer each question honestly - responses will be used to recommend competitive events that may fit your strengths, interests, and preferences. You are not required to choose one of the events recommended to you.</p>
-      <p class="quiz-small">${total} questions · about 5 minutes · your answers stay on this device.</p>
+      <p class="quiz-small">${total} questions · about 5 minutes</p>
       <button class="button" type="button" data-action="quiz-start">Start the quiz</button>
     </section>`;
   }
