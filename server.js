@@ -814,18 +814,22 @@ const sh = (fn) => ah(async (req, res, next) => {
 const CODE_FAIL_MAX = 1000;
 const CODE_FAIL_WINDOW_MS = 10 * 60 * 1000;
 const codeFails = new Map();
-async function requireSignupCode(req, res) {
+// 'ok', 'wrong' (counted), or 'blocked' (this IP has had too many wrong codes).
+async function checkSignupCode(req, code) {
   const ip = req.ip || 'unknown';
   const fails = (codeFails.get(ip) || []).filter(t => Date.now() - t < CODE_FAIL_WINDOW_MS);
-  if (fails.length >= CODE_FAIL_MAX) {
-    res.status(429).json({ error: 'Too many wrong codes. Wait a few minutes and try again.', code_required: true });
-    return false;
-  }
-  if (await signup.codeAccepted((req.body || {}).code)) return true;
+  if (fails.length >= CODE_FAIL_MAX) return 'blocked';
+  if (await signup.codeAccepted(code)) return 'ok';
   fails.push(Date.now());
   codeFails.set(ip, fails);
   if (codeFails.size > 5000) codeFails.clear(); // crude memory guard
-  res.status(403).json({ error: "That sign-up code isn't right. Check with an officer.", code_required: true, code_wrong: true });
+  return 'wrong';
+}
+async function requireSignupCode(req, res) {
+  const r = await checkSignupCode(req, (req.body || {}).code);
+  if (r === 'ok') return true;
+  if (r === 'blocked') res.status(429).json({ error: 'Too many wrong codes. Wait a few minutes and try again.', code_required: true });
+  else res.status(403).json({ error: "That sign-up code isn't right. Check with an officer.", code_required: true, code_wrong: true });
   return false;
 }
 // Public: the events and how full they are (no names). While sign-up is
@@ -835,7 +839,18 @@ app.get('/api/public/signup', sh(async (req, res) => {
   const st = await signup.publicSignupState();
   const officer = !!(req.session && req.session.name && await refreshOfficerSession(req));
   if (!st.open && !officer) return res.json({ open: false, events: [] });
-  res.json({ ...st, preview: !st.open });
+  const out = { ...st, preview: !st.open };
+  // Who signed up for what (names only). When a code is required, only for
+  // people who send it (the page passes it in X-Signup-Code); a wrong one
+  // counts like any wrong code and tells the page to ask again.
+  let code = req.get('x-signup-code');
+  if (code) { try { code = decodeURIComponent(code); } catch (e) { /* use as sent */ } }
+  if (!st.code_required) out.entries = await signup.publicEntries();
+  else if (code) {
+    if ((await checkSignupCode(req, code)) === 'ok') out.entries = await signup.publicEntries();
+    else out.code_ok = false;
+  }
+  res.json(out);
 }));
 // The page checks the code here before showing the events.
 app.post('/api/public/signup/code', nameCheckLimiter, sh(async (req, res) => {

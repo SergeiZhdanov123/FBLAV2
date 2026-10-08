@@ -647,3 +647,6 @@ a.officer-link{text-decoration:none;min-height:32px;padding-bottom:2px}
 .su-code-row{display:flex;gap:8px;align-items:stretch}
 .su-code-row input{flex:1;min-width:0;box-sizing:border-box;padding:9px 11px;border:1px solid var(--m-line);border-radius:8px;font:inherit;font-size:15px;letter-spacing:.04em}
 .su-code-row input:focus{outline:2px solid var(--m-blue);outline-offset:0;border-color:var(--m-blue)}
+.su-who{list-style:none;margin:2px 0 0;padding:6px 0 0;border-top:1px solid var(--m-line);font-size:12.5px;line-height:1.45;color:var(--m-ink)}
+.su-who li{padding:1px 0}
+.su-who li::before{content:"• ";color:var(--m-muted)}

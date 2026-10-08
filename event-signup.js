@@ -396,7 +396,7 @@ async function prepare(ev, names, d, strict) {
 // at once (server.js); other instances catch up within the TTL.
 const PUBLIC_STATE_TTL_MS = 2000;
 const ROSTER_TTL_MS = 10000;
-const caches = { state: null, roster: null, gate: null };
+const caches = { state: null, roster: null, gate: null, who: null };
 function cached(name, ttl, load) {
   const c = caches[name];
   if (c && Date.now() - c.at < ttl) return c.p;
@@ -406,7 +406,18 @@ function cached(name, ttl, load) {
   p.catch(() => { if (caches[name] && caches[name].p === p) caches[name] = null; });
   return p;
 }
-function dropCaches() { caches.state = null; caches.roster = null; caches.gate = null; }
+function dropCaches() { caches.state = null; caches.roster = null; caches.gate = null; caches.who = null; }
+// Who signed up for what, for the public page: { eventId: [[names of one entry], ...] }
+// in sign-up order. Names only. Shared and cached like the event list.
+function publicEntries() {
+  return cached('who', PUBLIC_STATE_TTL_MS, async () => {
+    const { d } = await mdb();
+    const rows = await d.collection(C.signups).find({}, { projection: { _id: 0, id: 1, event_id: 1, 'people.name': 1 } }).sort({ id: 1 }).toArray();
+    const out = {};
+    rows.forEach(s => { (out[s.event_id] = out[s.event_id] || []).push(s.people.map(p => p.name)); });
+    return out;
+  });
+}
 // Is this code good enough to use the sign-up page? (Always yes when no code
 // is required.) Uses the short-lived settings copy, so checking it costs the
 // database nothing.
@@ -648,6 +659,6 @@ module.exports = {
   listEvents, addEvent: dropping(addEvent), updateEvent: dropping(updateEvent), deleteEvent: dropping(deleteEvent),
   loadDefaultEvents: dropping(loadDefaultEvents),
   checkName, createSignup, deleteSignup: dropping(deleteSignup), listSignups, setOneEventOnly: dropping(setOneEventOnly), settingsFlags,
-  setSignupCode: dropping(setSignupCode), codeAccepted,
+  setSignupCode: dropping(setSignupCode), codeAccepted, publicEntries,
   publicSignupState, dropCaches, exportData, signupsCsv, signupsXlsx, DEFAULT_EVENTS, COLLECTIONS: C,
 };

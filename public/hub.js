@@ -818,11 +818,15 @@ function quizGo(step) {
 // ---------- Event Sign-Up ----------
 // Live data (spots left) comes from /api/public/signup, not the cached hub
 // bundle. Every rule is enforced again on the server when someone submits.
+// The event list carries who signed up for what only for people with the
+// sign-up code (when one is required), so the page sends the saved code along.
+const signupHeaders = () => (state.signupCode ? { Accept: 'application/json', 'X-Signup-Code': encodeURIComponent(state.signupCode) } : { Accept: 'application/json' });
 async function loadSignup() {
   state.signupLoading = true;
   try {
-    const res = await fetch('/api/public/signup', { headers: { Accept: 'application/json' } });
+    const res = await fetch('/api/public/signup', { headers: signupHeaders() });
     state.signupData = res.ok ? await res.json() : { open: false, events: [], error: true };
+    if (state.signupData.code_ok === false) { state.signupLoading = false; signupCodeRejected(); scheduleSignupPoll(); return; }
   } catch (e) { state.signupData = { open: false, events: [], error: true }; }
   state.signupLoading = false;
   syncSignupNav();
@@ -855,9 +859,10 @@ async function pollSignup() {
   if (document.visibilityState !== 'visible' || state.signupBusy || state.signupLoading) { scheduleSignupPoll(); return; }
   let next;
   try {
-    const res = await fetch('/api/public/signup', { headers: { Accept: 'application/json' } });
+    const res = await fetch('/api/public/signup', { headers: signupHeaders() });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     next = await res.json();
+    if (next.code_ok === false) { state.signupData = next; signupCodeRejected(); scheduleSignupPoll(); return; }
     signupPollFails = 0;
   } catch (e) {
     signupPollFails = Math.min(signupPollFails + 1, 4);
@@ -877,7 +882,7 @@ function applySignupData(next) {
     render();
     return;
   }
-  if (!shown(next) || JSON.stringify(prev.events) === JSON.stringify(next.events)) return;
+  if (!shown(next) || (JSON.stringify(prev.events) === JSON.stringify(next.events) && JSON.stringify(prev.entries || null) === JSON.stringify(next.entries || null))) return;
   const box = $('#signup-results');
   // Don't pull a button out from under someone using the keyboard; the next
   // check will catch up.
@@ -944,6 +949,9 @@ async function verifySignupCode(code, quiet) {
   if (ok) {
     state.signupCode = code; saveCode(code);
     state.signupCodeOk = true; state.signupCodeMsg = ''; state.signupCodeDraft = '';
+    state.signupCodeChecking = false;
+    loadSignup(); // now with the names
+    return;
   } else {
     if (out.code_wrong) { state.signupCode = ''; saveCode(''); }
     state.signupCodeTried = true;
@@ -994,7 +1002,7 @@ function renderSignup() {
       </ul>
     </div>
     <div class="su-toolbar">
-      <label class="input-wrap su-search">${icon('search')}<input id="signup-search" type="search" placeholder="Search events" value="${esc(state.signupQuery || '')}" aria-label="Search events" /></label>
+      <label class="input-wrap su-search">${icon('search')}<input id="signup-search" type="search" placeholder="${state.signupData && state.signupData.entries ? 'Search events or names' : 'Search events'}" value="${esc(state.signupQuery || '')}" aria-label="Search events" /></label>
       <div class="su-filters" role="group" aria-label="Show">
         ${[['all', 'All'], ['individual', 'Individual'], ['team', 'Team'], ['chapter', 'Chapter projects']].map(([v, l]) => `<button type="button" class="su-chip ${(state.signupFilter || 'all') === v ? 'is-on' : ''}" data-action="signup-filter" data-value="${v}" aria-pressed="${(state.signupFilter || 'all') === v}">${l}</button>`).join('')}
       </div>
@@ -1003,12 +1011,20 @@ function renderSignup() {
     <div id="signup-results">${signupResults()}</div>
   </section>`;
 }
+// Who signed up for an event: one line per entry (a team's names together).
+const entriesFor = (e) => (((state.signupData || {}).entries || {})[e.id] || []);
+const signedUpNames = (e) => entriesFor(e).map(t => t.join(' ')).join(' ');
+function whoList(e) {
+  const list = entriesFor(e);
+  if (!list.length) return '';
+  return `<ul class="su-who" aria-label="Signed up for ${esc(e.name)}">${list.map(t => `<li>${t.map(esc).join(', ')}</li>`).join('')}</ul>`;
+}
 function signupResults() {
   const sd = state.signupData || { events: [] };
   const q = (state.signupQuery || '').trim().toLowerCase();
   const filter = state.signupFilter || 'all';
   const kind = (e) => (e.chapter ? 'chapter' : e.team ? 'team' : 'individual');
-  const list = sd.events.filter(e => (!q || e.name.toLowerCase().includes(q))
+  const list = sd.events.filter(e => (!q || e.name.toLowerCase().includes(q) || signedUpNames(e).toLowerCase().includes(q))
     && (filter === 'all' || kind(e) === filter)
     && !(state.signupHideFull && e.taken >= e.max_entries));
   const card = (e) => {
@@ -1020,6 +1036,7 @@ function signupResults() {
         <span class="su-pill is-${status}">${left === 0 ? 'Full' : `${left} left`}</span>
       </div>
       <p class="su-meta">${teamText(e)}${e.grades ? ' · 9th-10th only' : ''}</p>
+      ${whoList(e)}
       <div class="su-card-foot">
         <span class="su-count">${e.taken} of ${e.max_entries} ${e.team ? (e.max_entries === 1 ? 'team' : 'teams') : (e.max_entries === 1 ? 'spot' : 'spots')} taken</span>
         ${left === 0 ? '' : `<button class="button su-btn" type="button" data-action="signup-open" data-id="${e.id}">Sign up</button>`}
