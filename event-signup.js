@@ -320,7 +320,34 @@ const claimIds = (key, chapter, strict) => (strict ? SLOTS : [chapter ? 'chapter
 
 async function settingsFlags() {
   const s = await db.getSettings();
-  return { open: s.event_signup_open === '1', strict: s.signup_one_event_only === '1' };
+  const code = String(s.signup_code || '').trim();
+  return {
+    open: s.event_signup_open === '1', strict: s.signup_one_event_only === '1',
+    // Officer-only: the public page is told only whether a code is needed.
+    code_required: s.signup_code_required === '1' && !!code, code,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Sign-up code
+// ---------------------------------------------------------------------------
+// Officers can require a code (handed out at a meeting) before anyone can use
+// the sign-up page, so people outside the chapter can't sign members up. The
+// server checks it on every name check and sign-up, not just the page. Codes
+// aren't case-sensitive and spaces don't matter ("fbla 2026" = "FBLA2026").
+const normCode = (c) => String(c || '').toLowerCase().replace(/\s+/g, '');
+async function setSignupCode({ required, code }) {
+  const cur = await settingsFlags();
+  let next = cur.code;
+  if (code !== undefined) {
+    next = String(code || '').replace(/\s+/g, ' ').trim();
+    if (next && (normCode(next).length < 3 || next.length > 40)) throw new SignupError('The code has to be 3 to 40 characters.');
+  }
+  const on = required === undefined ? cur.code_required : !!required;
+  if (on && !next) throw new SignupError('Type a code before turning it on.');
+  await db.setSetting('signup_code', next);
+  await db.setSetting('signup_code_required', on ? '1' : '0');
+  return { code_required: on, code: next, changed: next !== cur.code };
 }
 async function whoHas(d, ids) {
   const claim = await d.collection(C.claims).findOne({ _id: { $in: ids } });
@@ -369,7 +396,7 @@ async function prepare(ev, names, d, strict) {
 // at once (server.js); other instances catch up within the TTL.
 const PUBLIC_STATE_TTL_MS = 2000;
 const ROSTER_TTL_MS = 10000;
-const caches = { state: null, roster: null };
+const caches = { state: null, roster: null, gate: null };
 function cached(name, ttl, load) {
   const c = caches[name];
   if (c && Date.now() - c.at < ttl) return c.p;
@@ -379,7 +406,17 @@ function cached(name, ttl, load) {
   p.catch(() => { if (caches[name] && caches[name].p === p) caches[name] = null; });
   return p;
 }
-function dropCaches() { caches.state = null; caches.roster = null; }
+function dropCaches() { caches.state = null; caches.roster = null; caches.gate = null; }
+// Is this code good enough to use the sign-up page? (Always yes when no code
+// is required.) Uses the short-lived settings copy, so checking it costs the
+// database nothing.
+async function codeAccepted(code) {
+  const g = await cached('gate', PUBLIC_STATE_TTL_MS, async () => {
+    const f = await settingsFlags();
+    return { required: f.code_required, code: f.code };
+  });
+  return !g.required || normCode(code) === normCode(g.code);
+}
 
 // Check one typed name for the public form (live feedback before submitting).
 async function checkName(name, eventId) {
@@ -515,10 +552,10 @@ async function setOneEventOnly(strict) {
 function publicSignupState() {
   return cached('state', PUBLIC_STATE_TTL_MS, async () => {
     const { d } = await mdb();
-    const { open, strict } = await settingsFlags();
+    const { open, strict, code_required } = await settingsFlags();
     const [events, rosterCount] = await Promise.all([listEvents(), d.collection(C.roster).countDocuments({})]);
     return {
-      open, one_event_only: strict, member_list: rosterCount > 0,
+      open, one_event_only: strict, member_list: rosterCount > 0, code_required,
       events: events.map(e => ({ id: e.id, name: e.name, team: e.team, min_size: e.min_size, max_size: e.max_size, max_entries: e.max_entries, taken: e.taken, chapter: e.chapter, grades: e.grades })),
     };
   });
@@ -611,5 +648,6 @@ module.exports = {
   listEvents, addEvent: dropping(addEvent), updateEvent: dropping(updateEvent), deleteEvent: dropping(deleteEvent),
   loadDefaultEvents: dropping(loadDefaultEvents),
   checkName, createSignup, deleteSignup: dropping(deleteSignup), listSignups, setOneEventOnly: dropping(setOneEventOnly), settingsFlags,
+  setSignupCode: dropping(setSignupCode), codeAccepted,
   publicSignupState, dropCaches, exportData, signupsCsv, signupsXlsx, DEFAULT_EVENTS, COLLECTIONS: C,
 };

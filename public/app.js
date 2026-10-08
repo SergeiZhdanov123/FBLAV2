@@ -3230,7 +3230,7 @@ function renderEventSignup() {
     <p class="hint">Members sign up for competitive events on the site's Event Sign-Up page (no account needed) and add their teammates. Each person can only be signed up once, events can't go over their limit, and once the FBLA Member List has names, only those members can sign up. Everything is saved as it happens.</p>
     <div class="panel">
       <div class="panel-head">
-        <h3>Sign-up on the site ${s.open ? '<span class="badge paid">Open</span>' : '<span class="badge unpaid">Closed</span>'}</h3>
+        <h3>Sign-up on the site ${s.open ? '<span class="badge paid">Open</span>' : '<span class="badge unpaid">Closed</span>'}${s.code_required ? ' <span class="badge">Code required</span>' : ''}</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <a class="btn small secondary" href="/#signup" target="_blank" rel="noopener">Preview ↗</a>
           <button class="btn small ${s.open ? 'secondary' : ''}" onclick="setSignupOpen(${s.open ? 'false' : 'true'})" ${!s.open && !s.events.length ? 'disabled title="Add events first"' : ''}>${s.open ? 'Close sign-up' : 'Open sign-up on the site'}</button>
@@ -3242,6 +3242,15 @@ function renderEventSignup() {
           <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;"><input type="radio" name="su-rule" style="width:auto;margin:0;" ${s.strict ? '' : 'checked'} onchange="setSignupRule(false)" /> One individual or team event, plus one chapter project (FBLA's rule)</label>
           <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;"><input type="radio" name="su-rule" style="width:auto;margin:0;" ${s.strict ? 'checked' : ''} onchange="setSignupRule(true)" /> One event total</label>
         </div>
+      </div>
+      <div style="margin:10px 0 8px;">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px;">Sign-up code</div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;"><input type="checkbox" id="su-code-required" style="width:auto;margin:0;" ${s.code_required ? 'checked' : ''} onchange="saveSignupCode()" /> Require a code to see the events and sign up</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+          <input id="su-code-value" type="text" value="${esc(s.code || '')}" maxlength="40" placeholder="e.g. FBLA2026" autocomplete="off" spellcheck="false" style="max-width:220px;margin:0;" />
+          <button class="btn small secondary" onclick="saveSignupCode()">Save code</button>
+        </div>
+        <p class="hint" style="margin:6px 0 0;">${s.code_required ? `On: members have to enter <strong>${esc(s.code)}</strong> first. Changing it asks everyone for the new code.` : 'Off: anyone with the link can use the sign-up page.'} Capital letters and spaces don't matter.</p>
       </div>
       <p class="hint" style="margin:0;">${s.roster_count ? `<strong>${s.roster_count}</strong> names on the FBLA Member List: only they can sign up.` : 'The FBLA Member List is empty, so anyone can sign up with a first and last name. Add the list under <a href="#" onclick="switchTab(\'member-list\');return false;">FBLA Member List</a>.'} ${s.signups.length} sign-ups, ${people} people${offList ? `, <strong style="color:var(--danger)">${offList} not on the member list</strong>` : ''}.</p>
     </div>
@@ -3280,6 +3289,14 @@ window.setSignupOpen = async function(open) {
   if (open && !confirm('Open event sign-up? Members will see the Event Sign-Up page on the site and can sign up right away.')) return;
   try { await api('PATCH', '/api/signup/settings', { open }); if (state.config) state.config.event_signup_open = open; await reloadSignup(); }
   catch (e) { alert(e.message); }
+};
+window.saveSignupCode = async function() {
+  const box = $('#su-code-required'), input = $('#su-code-value');
+  const required = !!(box && box.checked), code = input ? input.value.trim() : '';
+  if (required && !code) { alert('Type a code first, then turn it on.'); if (box) box.checked = false; return; }
+  try { await api('PATCH', '/api/signup/settings', { code_required: required, code }); }
+  catch (e) { alert(e.message); }
+  await reloadSignup();
 };
 window.setSignupRule = async function(oneEventOnly) {
   try { await api('PATCH', '/api/signup/settings', { one_event_only: oneEventOnly }); }

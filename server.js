@@ -808,6 +808,26 @@ const sh = (fn) => ah(async (req, res, next) => {
     throw e;
   }
 });
+// Sign-up code (when an officer turns it on): every name check and sign-up
+// must carry it. Only WRONG codes are counted per IP, with a ceiling a whole
+// school on one Wi-Fi IP won't reach by mistyping, but a guessing script will.
+const CODE_FAIL_MAX = 1000;
+const CODE_FAIL_WINDOW_MS = 10 * 60 * 1000;
+const codeFails = new Map();
+async function requireSignupCode(req, res) {
+  const ip = req.ip || 'unknown';
+  const fails = (codeFails.get(ip) || []).filter(t => Date.now() - t < CODE_FAIL_WINDOW_MS);
+  if (fails.length >= CODE_FAIL_MAX) {
+    res.status(429).json({ error: 'Too many wrong codes. Wait a few minutes and try again.', code_required: true });
+    return false;
+  }
+  if (await signup.codeAccepted((req.body || {}).code)) return true;
+  fails.push(Date.now());
+  codeFails.set(ip, fails);
+  if (codeFails.size > 5000) codeFails.clear(); // crude memory guard
+  res.status(403).json({ error: "That sign-up code isn't right. Check with an officer.", code_required: true, code_wrong: true });
+  return false;
+}
 // Public: the events and how full they are (no names). While sign-up is
 // closed only signed-in officers (previewing) get the list.
 app.get('/api/public/signup', sh(async (req, res) => {
@@ -817,10 +837,17 @@ app.get('/api/public/signup', sh(async (req, res) => {
   if (!st.open && !officer) return res.json({ open: false, events: [] });
   res.json({ ...st, preview: !st.open });
 }));
+// The page checks the code here before showing the events.
+app.post('/api/public/signup/code', nameCheckLimiter, sh(async (req, res) => {
+  if (!(await requireSignupCode(req, res))) return;
+  res.json({ ok: true });
+}));
 app.post('/api/public/signup/check', nameCheckLimiter, sh(async (req, res) => {
+  if (!(await requireSignupCode(req, res))) return;
   res.json(await signup.checkName(String((req.body || {}).name || '').slice(0, 120), (req.body || {}).event_id));
 }));
 app.post('/api/public/signup', signupLimiter, sh(async (req, res) => {
+  if (!(await requireSignupCode(req, res))) return;
   const b = req.body || {};
   const names = Array.isArray(b.names) ? b.names.slice(0, 12).map(n => String(n || '').slice(0, 120)) : [];
   const out = await signup.createSignup({ eventId: b.event_id, names, source: 'member' });
@@ -837,6 +864,12 @@ app.patch('/api/signup/settings', requireOfficer, sh(async (req, res) => {
   if (b.open !== undefined) {
     await db.setSetting('event_signup_open', b.open ? '1' : '0');
     await db.logAudit(req.session.name, 'event_signup_open', b.open ? 'Opened event sign-up on the hub' : 'Closed event sign-up');
+  }
+  if (b.code_required !== undefined || b.code !== undefined) {
+    const r = await signup.setSignupCode({ required: b.code_required, code: b.code });
+    await db.logAudit(req.session.name, 'event_signup_code', r.code_required
+      ? (r.changed ? 'Sign-up code set and required on the site' : 'Sign-up code required on the site')
+      : (r.changed ? 'Sign-up code changed (not required)' : 'Sign-up code turned off'));
   }
   if (b.one_event_only !== undefined) {
     await signup.setOneEventOnly(!!b.one_event_only);

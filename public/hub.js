@@ -872,7 +872,7 @@ function applySignupData(next) {
   state.signupData = next;
   syncSignupNav();
   const shown = (d) => !!d && !d.error && (d.open || d.preview);
-  if (!prev || prev.error || shown(prev) !== shown(next) || prev.one_event_only !== next.one_event_only || prev.member_list !== next.member_list) {
+  if (!prev || prev.error || shown(prev) !== shown(next) || !!prev.code_required !== !!next.code_required || prev.one_event_only !== next.one_event_only || prev.member_list !== next.member_list) {
     // Opened, closed, or recovered from an error: redraw the page.
     render();
     return;
@@ -904,6 +904,72 @@ const spotsText = (e) => {
   return `${left} of ${e.max_entries} ${unit} left`;
 };
 const teamText = (e) => (e.team ? (e.min_size === e.max_size ? `Teams of ${e.max_size}` : `Teams of ${e.min_size}-${e.max_size}`) : 'Individual');
+// ---------- Sign-up code ----------
+// When officers require a code, the page asks for it before showing the
+// events, remembers it on this device, and sends it with every name check and
+// sign-up (the server refuses them without it). If officers change the code,
+// the next check is refused and the page asks for the new one.
+const CODE_KEY = 'fbla_signup_code';
+const readSavedCode = () => { try { return localStorage.getItem(CODE_KEY) || ''; } catch (e) { return ''; } };
+function saveCode(code) { try { if (code) localStorage.setItem(CODE_KEY, code); else localStorage.removeItem(CODE_KEY); } catch (e) { /* private mode */ } }
+state.signupCode = readSavedCode();
+state.signupCodeOk = false;
+function renderSignupCode() {
+  if (state.signupCode && !state.signupCodeTried) {
+    // A code saved on this device: check it quietly first.
+    if (!state.signupCodeChecking) verifySignupCode(state.signupCode, true);
+    return `${heading('Event Sign-Up', 'Sign up for a competitive event.')}<section class="m-section-card"><div class="empty-state"><h2>Checking your code…</h2></div></section>`;
+  }
+  return `${heading('Event Sign-Up', 'Sign up for a competitive event.')}
+  <section class="m-section-card su">
+    <form id="signup-code-form" class="su-code" novalidate>
+      <label for="su-code">Sign-up code</label>
+      <p class="su-dmeta">Enter the code your officers gave you to see the events and sign up.</p>
+      <div class="su-code-row">
+        <input id="su-code" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${esc(state.signupCodeDraft || '')}" />
+        <button class="button" type="submit">Continue</button>
+      </div>
+      <p class="su-error" id="su-code-error" role="alert">${esc(state.signupCodeMsg || '')}</p>
+    </form>
+  </section>`;
+}
+async function verifySignupCode(code, quiet) {
+  state.signupCodeChecking = true;
+  let out = {}, ok = false, status = 0;
+  try {
+    const res = await fetch('/api/public/signup/code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+    status = res.status; out = await res.json(); ok = res.ok && out.ok;
+  } catch (e) { out = { error: "Couldn't check the code. Check your connection and try again." }; }
+  state.signupCodeChecking = false;
+  if (ok) {
+    state.signupCode = code; saveCode(code);
+    state.signupCodeOk = true; state.signupCodeMsg = ''; state.signupCodeDraft = '';
+  } else {
+    if (out.code_wrong) { state.signupCode = ''; saveCode(''); }
+    state.signupCodeTried = true;
+    state.signupCodeMsg = quiet && out.code_wrong ? 'The sign-up code has changed. Enter the new code.' : (out.error || 'Something went wrong. Try again.');
+    if (!quiet && status === 403) state.signupCodeDraft = code;
+  }
+  if (state.page === 'signup') render();
+  if (!ok && !quiet) { const i = $('#su-code'); if (i) i.focus(); }
+}
+function submitSignupCode(form) {
+  const input = form.querySelector('#su-code'), btn = form.querySelector('button[type=submit]');
+  const code = input.value.trim();
+  if (!code) { $('#su-code-error').textContent = 'Enter the code.'; input.focus(); return; }
+  if (btn.disabled) return;
+  btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.innerHTML = `${SPINNER}Checking…`;
+  verifySignupCode(code, false);
+}
+// The server turned down the saved code (officers changed it): ask again.
+function signupCodeRejected() {
+  state.signupCode = ''; saveCode('');
+  state.signupCodeOk = false; state.signupCodeTried = true;
+  state.signupCodeMsg = 'The sign-up code has changed. Enter the new code.';
+  state.signupForm = null;
+  closeDialog();
+  if (state.page === 'signup') render();
+}
 function renderSignup() {
   const sd = state.signupData;
   if (!sd || (state.signupLoading && !sd)) {
@@ -914,6 +980,7 @@ function renderSignup() {
     return `${heading('Event Sign-Up', 'Sign up for a competitive event.')}
     <section class="m-section-card"><div class="empty-state"><h2>${sd.error ? "Event sign-up didn't load." : "Event sign-up isn't open right now."}</h2><p>${sd.error ? 'Trying again…' : 'Officers will open it when it is time to choose events. Keep this page open: the events will show up here by themselves, no need to refresh.'}</p></div></section>`;
   }
+  if (sd.code_required && !state.signupCodeOk) return renderSignupCode();
   return `${heading('Event Sign-Up', 'Sign up for a competitive event, and add your teammates if it is a team event.')}
   <section class="m-section-card su">
     ${sd.preview ? '<p class="quiz-preview-note">Officer preview: sign-up is closed, so members can\'t see this page. Open it in the officer portal (Events > Event Sign-Up).</p>' : ''}
@@ -998,8 +1065,9 @@ async function checkSignupName(i) {
   if (!name) { f.checks[i] = null; if (out) { out.textContent = ''; out.className = 'su-check'; } return null; }
   let c;
   try {
-    const res = await fetch('/api/public/signup/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, event_id: f.id }) });
+    const res = await fetch('/api/public/signup/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, event_id: f.id, code: state.signupCode }) });
     c = await res.json();
+    if (res.status === 403 && c.code_required) { signupCodeRejected(); return null; }
     if (!res.ok && !c.error) c = { ok: false, error: 'Could not check this name. Try again.' };
   } catch (e) { c = { ok: false, error: 'Could not check this name. Check your connection.' }; }
   if (($(`#su-name-${i}`) || {}).value !== undefined && $(`#su-name-${i}`).value.trim() !== name) return null; // typed again since
@@ -1025,6 +1093,7 @@ async function reviewSignup(form) {
     const c = f.checks[i];
     return c && c.ok && c.typed === f.names[i] ? c : checkSignupName(i);
   }));
+  if (!state.signupForm) return; // the sign-up code was turned down: the page is asking for it again
   btn.disabled = false; btn.removeAttribute('aria-busy'); btn.textContent = 'Review sign-up';
   const bad = results.findIndex(r => r && !r.ok);
   if (bad >= 0) { err.textContent = 'Fix the name marked above.'; inputs[bad].focus(); return; }
@@ -1066,8 +1135,9 @@ async function confirmSignup(btn) {
   }, 4000);
   let out, ok = false;
   try {
-    const res = await fetch('/api/public/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: f.id, names: f.names.filter(Boolean) }) });
+    const res = await fetch('/api/public/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: f.id, names: f.names.filter(Boolean), code: state.signupCode }) });
     out = await res.json(); ok = res.ok;
+    if (res.status === 403 && out.code_required) { clearTimeout(slow); setSignupBusy(false); signupCodeRejected(); return; }
   } catch (err) { out = { error: 'Could not reach the site. Check your connection and try again.' }; }
   clearTimeout(slow);
   setSignupBusy(false);
@@ -1687,6 +1757,7 @@ document.addEventListener('input', (event) => {
   if (t.id === 'resource-search') { state.resourceQuery = t.value; $('#resource-results').innerHTML = resourceResults(); }
   if (t.id === 'general-search') { state.generalQuery = t.value; $('#general-results').innerHTML = generalResults(); }
   if (t.id === 'prep-search') { state.prepQuery = t.value; $('#prep-results').innerHTML = prepResults(); }
+  if (t.id === 'su-code') { state.signupCodeDraft = t.value; const e = $('#su-code-error'); if (e) e.textContent = ''; }
   if (t.id === 'signup-search') { state.signupQuery = t.value; $('#signup-results').innerHTML = signupResults(); }
   // Editing a name clears its old check result.
   if (t.classList && t.classList.contains('su-name')) {
@@ -1715,6 +1786,7 @@ document.addEventListener('change', (event) => {
 document.addEventListener('submit', (event) => {
   if (event.target.id === 'officer-login-form') { event.preventDefault(); submitOfficerLogin(event.target); }
   if (event.target.id === 'signup-form') { event.preventDefault(); reviewSignup(event.target); }
+  if (event.target.id === 'signup-code-form') { event.preventDefault(); submitSignupCode(event.target); }
 });
 document.addEventListener('keydown', (event) => {
   const day = event.target.closest && event.target.closest('[data-action="cal-day"]');

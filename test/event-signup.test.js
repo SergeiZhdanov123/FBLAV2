@@ -266,3 +266,33 @@ test('db: grade limit applies when the member list has the grade', skip, async (
   const e = await err(su.createSignup({ eventId: ev['Introduction to FBLA'].id, names: ['Lou Lane'] }));
   assert.match(e.message, /only for 9th and 10th graders, and Lou Lane is in 11th grade/);
 });
+
+test('db: sign-up code: officers set it, the site only learns whether one is needed', skip, async () => {
+  // Off by default: anything goes.
+  assert.equal((await su.settingsFlags()).code_required, false);
+  assert.equal(await su.codeAccepted(''), true);
+  // Can't turn it on without a code, and codes are 3-40 characters.
+  assert.match((await err(su.setSignupCode({ required: true }))).message, /Type a code/);
+  assert.match((await err(su.setSignupCode({ required: true, code: 'ab' }))).message, /3 to 40/);
+  assert.match((await err(su.setSignupCode({ required: true, code: 'x'.repeat(41) }))).message, /3 to 40/);
+  const r = await su.setSignupCode({ required: true, code: '  FBLA  2026 ' });
+  assert.deepEqual([r.code_required, r.code, r.changed], [true, 'FBLA 2026', true]);
+  // Takes effect immediately (the officer change drops the cached copy).
+  assert.equal(await su.codeAccepted(''), false);
+  assert.equal(await su.codeAccepted('wrong'), false);
+  assert.equal(await su.codeAccepted('FBLA 2026'), true);
+  assert.equal(await su.codeAccepted('fbla2026'), true, 'not case-sensitive, spaces ignored');
+  // The public state says a code is needed but never what it is.
+  const pub = await su.publicSignupState();
+  assert.equal(pub.code_required, true);
+  assert.ok(!JSON.stringify(pub).toLowerCase().includes('fbla 2026'), 'code never reaches the public state');
+  // Changing it: the old one stops working.
+  await su.setSignupCode({ code: 'NEWCODE' });
+  assert.equal(await su.codeAccepted('fbla2026'), false);
+  assert.equal(await su.codeAccepted('newcode'), true);
+  // Turning it off keeps the code for next time.
+  const off = await su.setSignupCode({ required: false });
+  assert.deepEqual([off.code_required, off.code], [false, 'NEWCODE']);
+  assert.equal(await su.codeAccepted(''), true);
+  assert.equal((await su.publicSignupState()).code_required, false);
+});
