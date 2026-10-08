@@ -944,7 +944,9 @@ async function reviewSignup(form) {
   const inputs = [...form.querySelectorAll('.su-name')];
   inputs.forEach((inp, i) => { f.names[i] = inp.value.trim(); });
   for (let i = 0; i < e.min_size; i++) if (!f.names[i]) { err.textContent = i === 0 ? 'Enter your name.' : `${e.name} needs at least ${e.min_size} people. Add your teammates.`; inputs[i].focus(); return; }
-  const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Checking…';
+  const btn = form.querySelector('button[type=submit]');
+  if (btn.disabled) return; // already checking
+  btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.innerHTML = `${SPINNER}Checking names…`;
   // A name already checked OK (when its box lost focus) isn't checked again,
   // which halves the requests during a rush. The server re-checks everything
   // when the sign-up is confirmed anyway.
@@ -953,7 +955,7 @@ async function reviewSignup(form) {
     const c = f.checks[i];
     return c && c.ok && c.typed === f.names[i] ? c : checkSignupName(i);
   }));
-  btn.disabled = false; btn.textContent = 'Review sign-up';
+  btn.disabled = false; btn.removeAttribute('aria-busy'); btn.textContent = 'Review sign-up';
   const bad = results.findIndex(r => r && !r.ok);
   if (bad >= 0) { err.textContent = 'Fix the name marked above.'; inputs[bad].focus(); return; }
   const names = results.filter(Boolean).map(r => r.name);
@@ -966,18 +968,42 @@ async function reviewSignup(form) {
     <div class="su-actions">
       <button class="button secondary" type="button" data-action="signup-back">← Edit names</button>
       <button class="button" type="button" data-action="signup-confirm">Confirm sign-up</button>
-    </div>`);
+    </div>
+    <p class="su-wait" id="su-wait" role="status" aria-live="polite"></p>`);
+}
+// While a sign-up is saving, the pop-up can't be closed and the page warns
+// before a refresh, so nobody abandons or re-sends it. During a rush, saving can
+// take a while; the message says so instead of looking stuck. All of this is in
+// the page: it adds no requests.
+const SPINNER = '<span class="su-spin" aria-hidden="true"></span>';
+const warnLeave = (event) => { event.preventDefault(); event.returnValue = ''; };
+function setSignupBusy(busy) {
+  state.signupBusy = busy;
+  if (busy) window.addEventListener('beforeunload', warnLeave);
+  else window.removeEventListener('beforeunload', warnLeave);
+  dialog.querySelectorAll('[data-action="signup-back"], [data-action="dialog-close"]').forEach(b => { b.disabled = busy; });
 }
 async function confirmSignup(btn) {
+  if (state.signupBusy) return;
   const f = state.signupForm, e = signupEvent(f.id);
-  btn.disabled = true; btn.textContent = 'Signing up…';
+  setSignupBusy(true);
+  btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.innerHTML = `${SPINNER}Saving your spot…`;
+  const err = $('#su-error'); err.textContent = '';
+  const note = $('#su-wait');
+  if (note) note.textContent = "Please wait. Don't tap again, close this, or refresh the page.";
+  const slow = setTimeout(() => {
+    if (note) note.textContent = 'Still saving. Lots of people are signing up right now, so this can take up to a minute. Keep this page open.';
+  }, 4000);
   let out, ok = false;
   try {
     const res = await fetch('/api/public/signup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event_id: f.id, names: f.names.filter(Boolean) }) });
     out = await res.json(); ok = res.ok;
   } catch (err) { out = { error: 'Could not reach the site. Check your connection and try again.' }; }
+  clearTimeout(slow);
+  setSignupBusy(false);
   if (!ok) {
-    btn.disabled = false; btn.textContent = 'Confirm sign-up';
+    btn.disabled = false; btn.removeAttribute('aria-busy'); btn.textContent = 'Confirm sign-up';
+    if (note) note.textContent = '';
     $('#su-error').textContent = out.error || 'Something went wrong. Try again.';
     loadSignup(); // spots may have changed
     return;
@@ -1188,7 +1214,7 @@ function openPlainDialog(title, body) {
   dialog.classList.add('is-plain');
 }
 function closeDialog() {
-  if (!dialog.open) return;
+  if (!dialog.open || state.signupBusy) return;
   dialog.close();
   document.body.style.overflow = '';
   if (returnFocus && returnFocus.isConnected && !returnFocus.closest('[inert]')) returnFocus.focus();

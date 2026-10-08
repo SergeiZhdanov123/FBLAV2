@@ -636,3 +636,9 @@ a.officer-link{text-decoration:none;min-height:32px;padding-bottom:2px}
 .su-review li:first-child{border-top:0}
 .su-review li span{color:var(--m-muted);font-size:12.5px}
 .su-done{font-size:15px;margin:0 0 10px}
+.su-wait{min-height:0;margin:8px 0 0;font-size:13px;line-height:1.5;color:var(--m-muted);text-align:right}
+.su-wait:empty{display:none}
+.su-actions .button[disabled],.su .button[disabled],#signup-form .button[disabled]{opacity:.8;cursor:progress}
+.su-actions .button.secondary[disabled]{opacity:.45;cursor:not-allowed}
+.su-spin{display:inline-block;width:13px;height:13px;margin-right:8px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:su-spin .7s linear infinite}
+@keyframes su-spin{to{transform:rotate(360deg)}}
