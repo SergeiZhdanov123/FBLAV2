@@ -354,16 +354,42 @@ async function prepare(ev, names, d, strict) {
   return people;
 }
 
+// ---------------------------------------------------------------------------
+// Short-lived caches for the public page
+// ---------------------------------------------------------------------------
+// Free Atlas (M0) runs 100 database operations a second and queues the rest,
+// and the whole chapter opens the sign-up page at the same moment. The
+// spots-left list and the member list are read far more often than they
+// change, so each server instance reuses them briefly instead of re-reading
+// them for every student. Everyone arriving together shares ONE read (the
+// promise is cached), not one read each. Only the live-feedback paths
+// (the event list and the name check) use these: createSignup always reads
+// the database, and its transaction is what enforces open/closed, capacity
+// and one event per person. Any officer change on this instance drops them
+// at once (server.js); other instances catch up within the TTL.
+const PUBLIC_STATE_TTL_MS = 2000;
+const ROSTER_TTL_MS = 10000;
+const caches = { state: null, roster: null };
+function cached(name, ttl, load) {
+  const c = caches[name];
+  if (c && Date.now() - c.at < ttl) return c.p;
+  const p = load();
+  caches[name] = { at: Date.now(), p };
+  // A failed read isn't kept: the next request tries again.
+  p.catch(() => { if (caches[name] && caches[name].p === p) caches[name] = null; });
+  return p;
+}
+function dropCaches() { caches.state = null; caches.roster = null; }
+
 // Check one typed name for the public form (live feedback before submitting).
 async function checkName(name, eventId) {
   const { d } = await mdb();
-  const roster = await d.collection(C.roster).find({}).toArray();
+  const roster = await cached('roster', ROSTER_TTL_MS, () => d.collection(C.roster).find({}).toArray());
   const r = resolveName(name, roster);
   if (!r.ok) return r;
-  const { strict } = await settingsFlags();
-  let ev = null;
-  if (eventId) ev = await d.collection(C.events).findOne({ _id: String(Number(eventId)) });
-  const held = await whoHas(d, claimIds(r.key, ev ? ev.chapter : false, strict));
+  const st = await publicSignupState();
+  const ev = eventId ? st.events.find(e => e.id === Number(eventId)) || null : null;
+  const held = await whoHas(d, claimIds(r.key, ev ? ev.chapter : false, st.one_event_only));
   if (held) return { ok: false, name: r.name, error: alreadyMessage(held) };
   if (ev && ev.grades === '9-10' && r.grade && !['9', '10'].includes(String(r.grade))) {
     return { ok: false, name: r.name, error: `${ev.name} is only for 9th and 10th graders, and ${r.name} is in ${r.grade}th grade.` };
@@ -371,6 +397,22 @@ async function checkName(name, eventId) {
   return { ok: true, name: r.name };
 }
 
+const fullError = (e) => new SignupError(`${e.name} is full (${e.max_entries} ${e.team ? (e.max_entries === 1 ? 'team' : 'teams') : (e.max_entries === 1 ? 'person' : 'people')}).`, 409, { full: true });
+// Sign-ups for the same event take turns on this server instance. Without
+// this, students racing for a popular event all start transactions on the same
+// event document, collide, and retry over and over; on the free Atlas tier
+// (100 operations a second) those retries were most of the load and pushed
+// sign-ups to 20-60 seconds. Taking turns also keeps first come, first served
+// within an instance. The transaction still guarantees the rules across
+// instances; this only stops collisions.
+const turns = new Map();
+async function takeTurn(key, fn) {
+  const before = turns.get(key) || Promise.resolve();
+  const mine = before.then(fn);
+  const done = mine.catch(() => {});
+  turns.set(key, done);
+  try { return await mine; } finally { if (turns.get(key) === done) turns.delete(key); }
+}
 async function createSignup({ eventId, names, source = 'member', byName = null }) {
   const { d, client } = await mdb();
   const { open, strict } = await settingsFlags();
@@ -378,36 +420,42 @@ async function createSignup({ eventId, names, source = 'member', byName = null }
   const ev = await d.collection(C.events).findOne({ _id: String(Number(eventId)) });
   if (!ev) throw new SignupError('That event is no longer available. Refresh the page.', 404);
   const people = await prepare(ev, names, d, strict);
-  const id = await db.nextId('signups');
-  const doc = {
-    _id: String(id), id, event_id: ev.id, event_name: ev.name, chapter: !!ev.chapter,
-    people, source, submitted_by: source === 'officer' ? byName : people[0].name, created_at: db.tsString(),
-  };
-  const session = client.startSession();
-  try {
-    await session.withTransaction(async () => {
-      // Writing to the event document makes concurrent sign-ups for the same
-      // event conflict, so the count below can't be stale when we commit.
-      const fresh = await d.collection(C.events).findOneAndUpdate({ _id: ev._id }, { $inc: { lock: 1 } }, { session, returnDocument: 'after' });
-      if (!fresh) throw new SignupError('That event is no longer available. Refresh the page.', 404);
-      const taken = await d.collection(C.signups).countDocuments({ event_id: ev.id }, { session });
-      if (taken >= fresh.max_entries) {
-        throw new SignupError(`${ev.name} is full (${fresh.max_entries} ${fresh.team ? (fresh.max_entries === 1 ? 'team' : 'teams') : (fresh.max_entries === 1 ? 'person' : 'people')}).`, 409, { full: true });
+  const doc = await takeTurn(ev.id, async () => {
+    // Early exit for an event that's already full, so students still trying for
+    // it don't each start a transaction that locks it (under load those lock
+    // conflicts and retries were the main slowdown). The count is checked again
+    // inside the transaction, which is what actually guarantees the limit.
+    if (await d.collection(C.signups).countDocuments({ event_id: ev.id }) >= ev.max_entries) throw fullError(ev);
+    const id = await db.nextId('signups');
+    const doc = {
+      _id: String(id), id, event_id: ev.id, event_name: ev.name, chapter: !!ev.chapter,
+      people, source, submitted_by: source === 'officer' ? byName : people[0].name, created_at: db.tsString(),
+    };
+    const session = client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        // Writing to the event document makes concurrent sign-ups for the same
+        // event conflict, so the count below can't be stale when we commit.
+        const fresh = await d.collection(C.events).findOneAndUpdate({ _id: ev._id }, { $inc: { lock: 1 } }, { session, returnDocument: 'after' });
+        if (!fresh) throw new SignupError('That event is no longer available. Refresh the page.', 404);
+        const taken = await d.collection(C.signups).countDocuments({ event_id: ev.id }, { session });
+        if (taken >= fresh.max_entries) throw fullError(fresh);
+        const claims = people.flatMap(p => claimIds(p.key, ev.chapter, strict).map(cid => ({ _id: cid, signup_id: id, event_id: ev.id, event_name: ev.name, name: p.name })));
+        await d.collection(C.claims).insertMany(claims, { session, ordered: true });
+        await d.collection(C.signups).insertOne(doc, { session });
+      });
+    } catch (e) {
+      if (e instanceof SignupError) throw e;
+      if (e && (e.code === 11000 || /E11000/.test(e.message || ''))) {
+        const held = await whoHas(d, people.flatMap(p => claimIds(p.key, ev.chapter, strict)));
+        throw new SignupError(held ? alreadyMessage(held) : 'Someone on this team just signed up for another event. Refresh and try again.', 409);
       }
-      const claims = people.flatMap(p => claimIds(p.key, ev.chapter, strict).map(cid => ({ _id: cid, signup_id: id, event_id: ev.id, event_name: ev.name, name: p.name })));
-      await d.collection(C.claims).insertMany(claims, { session, ordered: true });
-      await d.collection(C.signups).insertOne(doc, { session });
-    });
-  } catch (e) {
-    if (e instanceof SignupError) throw e;
-    if (e && (e.code === 11000 || /E11000/.test(e.message || ''))) {
-      const held = await whoHas(d, people.flatMap(p => claimIds(p.key, ev.chapter, strict)));
-      throw new SignupError(held ? alreadyMessage(held) : 'Someone on this team just signed up for another event. Refresh and try again.', 409);
+      throw e;
+    } finally {
+      await session.endSession();
     }
-    throw e;
-  } finally {
-    await session.endSession();
-  }
+    return doc;
+  });
   const { _id, ...out } = doc;
   return out;
 }
@@ -463,14 +511,17 @@ async function setOneEventOnly(strict) {
 }
 
 // What the public page needs: the events and how full they are. No names.
-async function publicSignupState() {
-  const { d } = await mdb();
-  const { open, strict } = await settingsFlags();
-  const [events, rosterCount] = await Promise.all([listEvents(), d.collection(C.roster).countDocuments({})]);
-  return {
-    open, one_event_only: strict, member_list: rosterCount > 0,
-    events: events.map(e => ({ id: e.id, name: e.name, team: e.team, min_size: e.min_size, max_size: e.max_size, max_entries: e.max_entries, taken: e.taken, chapter: e.chapter, grades: e.grades })),
-  };
+// Cached briefly (see "Short-lived caches" above); callers must not modify it.
+function publicSignupState() {
+  return cached('state', PUBLIC_STATE_TTL_MS, async () => {
+    const { d } = await mdb();
+    const { open, strict } = await settingsFlags();
+    const [events, rosterCount] = await Promise.all([listEvents(), d.collection(C.roster).countDocuments({})]);
+    return {
+      open, one_event_only: strict, member_list: rosterCount > 0,
+      events: events.map(e => ({ id: e.id, name: e.name, team: e.team, min_size: e.min_size, max_size: e.max_size, max_entries: e.max_entries, taken: e.taken, chapter: e.chapter, grades: e.grades })),
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -550,10 +601,15 @@ async function signupsXlsx() {
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
+// Officer changes drop the public caches when they finish, even if they fail
+// partway, so the page and name check never keep stale rules on this instance.
+const dropping = (fn) => async (...args) => { try { return await fn(...args); } finally { dropCaches(); } };
 module.exports = {
   SignupError, normName, tidyName, resolveName, parseRosterText, cleanEvent, cleanMember,
-  listRoster, addRosterMembers, updateRosterMember, deleteRosterMember, clearRoster,
-  listEvents, addEvent, updateEvent, deleteEvent, loadDefaultEvents,
-  checkName, createSignup, deleteSignup, listSignups, setOneEventOnly, settingsFlags,
-  publicSignupState, exportData, signupsCsv, signupsXlsx, DEFAULT_EVENTS, COLLECTIONS: C,
+  listRoster, addRosterMembers: dropping(addRosterMembers), updateRosterMember: dropping(updateRosterMember),
+  deleteRosterMember: dropping(deleteRosterMember), clearRoster: dropping(clearRoster),
+  listEvents, addEvent: dropping(addEvent), updateEvent: dropping(updateEvent), deleteEvent: dropping(deleteEvent),
+  loadDefaultEvents: dropping(loadDefaultEvents),
+  checkName, createSignup, deleteSignup: dropping(deleteSignup), listSignups, setOneEventOnly: dropping(setOneEventOnly), settingsFlags,
+  publicSignupState, dropCaches, exportData, signupsCsv, signupsXlsx, DEFAULT_EVENTS, COLLECTIONS: C,
 };

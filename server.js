@@ -218,7 +218,9 @@ app.use('/api', async (req, res, next) => {
   if (req.path.startsWith('/google-sheets-backup')) return next();
   try {
     await db.init();
-    if (!initialBackupStarted) {
+    // Not on a student's request: on Vercel this first backup blocks the
+    // response and reads every collection, on each new instance.
+    if (!initialBackupStarted && !req.path.startsWith('/public/')) {
       initialBackupStarted = true;
       if (IS_SERVERLESS) {
         const status = await sheetsBackup.requestSync('process startup');
@@ -237,7 +239,13 @@ app.use('/api', async (req, res, next) => {
 });
 
 // After a successful write, snapshot the database to the Google Sheets backup.
-app.use('/api', createBackupResponseMiddleware(sheetsBackup, { blocking: IS_SERVERLESS }));
+// Public sign-up requests are skipped: the name check writes nothing, and on
+// Vercel a sign-up would otherwise wait for a full workbook rewrite, which
+// stalls every student when a whole school signs up at once. The snapshot is
+// of the whole database, so the next officer write (or a manual sync) still
+// backs up every sign-up.
+const backupAfterWrite = createBackupResponseMiddleware(sheetsBackup, { blocking: IS_SERVERLESS });
+app.use('/api', (req, res, next) => (req.path.startsWith('/public/') ? next() : backupAfterWrite(req, res, next)));
 
 // The public hub is read far more than it changes (a whole school can open it
 // at once), so its bundle is cached briefly and dropped after any successful
@@ -245,8 +253,9 @@ app.use('/api', createBackupResponseMiddleware(sheetsBackup, { blocking: IS_SERV
 const PUBLIC_CACHE_MS = 15 * 1000;
 let publicCache = null;
 app.use('/api', (req, res, next) => {
-  if (req.method !== 'GET') {
-    res.on('finish', () => { if (res.statusCode < 400) publicCache = null; });
+  // Public sign-up POSTs don't change anything the hub bundle shows.
+  if (req.method !== 'GET' && !req.path.startsWith('/public/')) {
+    res.on('finish', () => { if (res.statusCode < 400) { publicCache = null; signup.dropCaches(); } });
   }
   next();
 });
@@ -412,11 +421,17 @@ app.get('/api/public/about', ah(async (req, res) => {
 }));
 // Everything the public hub shows, in one response.
 app.get('/api/public/hub', ah(async (req, res) => {
+  // The pending read is cached too, so a crowd arriving together (or right
+  // after the cache expires) shares one database read instead of each doing
+  // every collection read again.
   if (!publicCache || Date.now() - publicCache.at > PUBLIC_CACHE_MS) {
-    publicCache = { at: Date.now(), data: await db.publicHub() };
+    const pending = db.publicHub();
+    publicCache = { at: Date.now(), data: pending };
+    pending.catch(() => { if (publicCache && publicCache.data === pending) publicCache = null; });
   }
+  const data = await publicCache.data;
   res.setHeader('Cache-Control', 'no-store');
-  res.json(publicCache.data);
+  res.json(data);
 }));
 
 app.get('/api/me', ah(async (req, res) => {
@@ -779,8 +794,13 @@ app.patch('/api/event-quiz', requireOfficer, ah(async (req, res) => {
 // Members sign up from the public hub (no accounts); officers manage the
 // events, the sign-ups, and the registered FBLA member list.
 const signup = require('./event-signup');
-const signupLimiter = rateLimit(30, 10 * 60 * 1000);
-const nameCheckLimiter = rateLimit(200, 10 * 60 * 1000);
+// Per-IP ceilings sized for a whole school on ONE IP: school Wi-Fi puts every
+// student behind the same public address, so these have to fit ~150+ students
+// signing up together (every typed name is checked, and retries add more). They are
+// separate from ipFloodLimiter on purpose: sign-up traffic must not use up the
+// officer sign-in allowance for the school's IP, and vice versa.
+const signupLimiter = rateLimit(1500, 10 * 60 * 1000);
+const nameCheckLimiter = rateLimit(6000, 10 * 60 * 1000);
 // Send a SignupError as JSON with its status; anything else is a real error.
 const sh = (fn) => ah(async (req, res, next) => {
   try { await fn(req, res, next); } catch (e) {
@@ -797,10 +817,10 @@ app.get('/api/public/signup', sh(async (req, res) => {
   if (!st.open && !officer) return res.json({ open: false, events: [] });
   res.json({ ...st, preview: !st.open });
 }));
-app.post('/api/public/signup/check', ipFloodLimiter, nameCheckLimiter, sh(async (req, res) => {
+app.post('/api/public/signup/check', nameCheckLimiter, sh(async (req, res) => {
   res.json(await signup.checkName(String((req.body || {}).name || '').slice(0, 120), (req.body || {}).event_id));
 }));
-app.post('/api/public/signup', ipFloodLimiter, signupLimiter, sh(async (req, res) => {
+app.post('/api/public/signup', signupLimiter, sh(async (req, res) => {
   const b = req.body || {};
   const names = Array.isArray(b.names) ? b.names.slice(0, 12).map(n => String(n || '').slice(0, 120)) : [];
   const out = await signup.createSignup({ eventId: b.event_id, names, source: 'member' });

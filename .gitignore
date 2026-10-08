@@ -9,3 +9,5 @@ fbla-*.json
 *google-sheets-credentials*.json
 render-service-account.txt
 backup-before-*.json
+.dev.vars
+.wrangler/

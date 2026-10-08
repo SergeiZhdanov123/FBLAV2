@@ -933,6 +933,7 @@ async function checkSignupName(i) {
     if (!res.ok && !c.error) c = { ok: false, error: 'Could not check this name. Try again.' };
   } catch (e) { c = { ok: false, error: 'Could not check this name. Check your connection.' }; }
   if (($(`#su-name-${i}`) || {}).value !== undefined && $(`#su-name-${i}`).value.trim() !== name) return null; // typed again since
+  c.typed = name;
   f.checks[i] = c;
   if (out) { out.textContent = c.ok ? `✓ ${c.name}` : c.error; out.className = `su-check ${c.ok ? 'ok' : 'bad'}`; }
   return c;
@@ -944,7 +945,14 @@ async function reviewSignup(form) {
   inputs.forEach((inp, i) => { f.names[i] = inp.value.trim(); });
   for (let i = 0; i < e.min_size; i++) if (!f.names[i]) { err.textContent = i === 0 ? 'Enter your name.' : `${e.name} needs at least ${e.min_size} people. Add your teammates.`; inputs[i].focus(); return; }
   const btn = form.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Checking…';
-  const results = await Promise.all(inputs.map((inp, i) => (f.names[i] ? checkSignupName(i) : null)));
+  // A name already checked OK (when its box lost focus) isn't checked again,
+  // which halves the requests during a rush. The server re-checks everything
+  // when the sign-up is confirmed anyway.
+  const results = await Promise.all(inputs.map((inp, i) => {
+    if (!f.names[i]) return null;
+    const c = f.checks[i];
+    return c && c.ok && c.typed === f.names[i] ? c : checkSignupName(i);
+  }));
   btn.disabled = false; btn.textContent = 'Review sign-up';
   const bad = results.findIndex(r => r && !r.ok);
   if (bad >= 0) { err.textContent = 'Fix the name marked above.'; inputs[bad].focus(); return; }

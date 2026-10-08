@@ -227,21 +227,25 @@ function ensureFirebase() {
   if (!MONGO_URI) {
     throw new Error('MONGODB_URI is not set. Add your MongoDB Atlas connection string to the environment.');
   }
-  // Pool size is adaptive. On serverless (Vercel) every concurrent instance
-  // builds its OWN pool and Atlas M0 allows only 500 connections total, so we
-  // keep it tiny (5) to avoid exhausting the cluster. On an always-on server
-  // (Render, or local dev) there is just ONE process, so a larger pool is safe
-  // (1 x 25 = 25, far under 500) and much faster: the officer dashboard fires
-  // ~20 queries at once, and a 5-connection pool forces them into slow waves.
-  // Override anytime with MONGO_MAX_POOL.
-  const defaultPool = process.env.VERCEL ? 5 : 25;
+  // Pool size. Every Vercel instance builds its OWN pool and Atlas M0 allows
+  // 500 connections total, but connections only open when needed (minPoolSize
+  // 0, closed after 30s idle), and with Fluid compute one instance serves many
+  // requests at once. A 5-connection pool was the bottleneck under load: with
+  // 150 students signing up together, sign-up transactions retrying on write
+  // conflicts held all 5 connections and requests queued for 15-30s. 25 per
+  // instance cleared that in a local stress test, and it would still take 20
+  // instances all at full pool to reach 500. Override with MONGO_MAX_POOL.
+  const defaultPool = 25;
   mongoClient = new MongoClient(MONGO_URI, {
     ignoreUndefined: true,
     maxPoolSize: Number(process.env.MONGO_MAX_POOL) || defaultPool,
     minPoolSize: 0,
     maxIdleTimeMS: 30000,
     serverSelectionTimeoutMS: 8000,
-    waitQueueTimeoutMS: 10000,
+    // Free Atlas queues operations above 100/s instead of failing them, so
+    // under a rush a request can wait a while for a connection. Waiting is
+    // better than failing a student's sign-up; Vercel allows 300s per request.
+    waitQueueTimeoutMS: 60000,
   });
   mongoDb = mongoClient.db(MONGO_DBNAME);
   adapter = {
