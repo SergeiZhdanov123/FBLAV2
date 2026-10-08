@@ -825,8 +825,78 @@ async function loadSignup() {
     state.signupData = res.ok ? await res.json() : { open: false, events: [], error: true };
   } catch (e) { state.signupData = { open: false, events: [], error: true }; }
   state.signupLoading = false;
+  syncSignupNav();
   if (state.page === 'signup') render();
+  scheduleSignupPoll();
 }
+
+// Live updates. While the sign-up page is open it checks for changes every few
+// seconds, so students waiting for sign-up to open see the events appear, and
+// spots left stay current, without refreshing. The server answers these from a
+// 2-second in-memory copy, so they cost the database almost nothing. Checks
+// pause while the tab is hidden or a sign-up is saving, slow down if the
+// server is struggling, and are spread out so phones don't all ask at once.
+// Only the event list is redrawn: the search box, the sign-up form and the
+// confirm pop-up are never touched.
+const SIGNUP_POLL_WAITING_MS = 3000; // closed: watching for it to open
+const SIGNUP_POLL_OPEN_MS = 6000;    // open: keeping spots left current
+let signupPollTimer = null;
+let signupPollFails = 0;
+function scheduleSignupPoll() {
+  clearTimeout(signupPollTimer);
+  if (state.page !== 'signup') return;
+  const sd = state.signupData;
+  const base = sd && sd.open ? SIGNUP_POLL_OPEN_MS : SIGNUP_POLL_WAITING_MS;
+  const wait = Math.min(60000, base * 2 ** signupPollFails) + Math.random() * 1000;
+  signupPollTimer = setTimeout(pollSignup, wait);
+}
+async function pollSignup() {
+  if (state.page !== 'signup') return;
+  if (document.visibilityState !== 'visible' || state.signupBusy || state.signupLoading) { scheduleSignupPoll(); return; }
+  let next;
+  try {
+    const res = await fetch('/api/public/signup', { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    next = await res.json();
+    signupPollFails = 0;
+  } catch (e) {
+    signupPollFails = Math.min(signupPollFails + 1, 4);
+    scheduleSignupPoll();
+    return;
+  }
+  if (state.page === 'signup' && !state.signupBusy && !state.signupLoading) applySignupData(next);
+  scheduleSignupPoll();
+}
+function applySignupData(next) {
+  const prev = state.signupData;
+  state.signupData = next;
+  syncSignupNav();
+  const shown = (d) => !!d && !d.error && (d.open || d.preview);
+  if (!prev || prev.error || shown(prev) !== shown(next) || prev.one_event_only !== next.one_event_only || prev.member_list !== next.member_list) {
+    // Opened, closed, or recovered from an error: redraw the page.
+    render();
+    return;
+  }
+  if (!shown(next) || JSON.stringify(prev.events) === JSON.stringify(next.events)) return;
+  const box = $('#signup-results');
+  // Don't pull a button out from under someone using the keyboard; the next
+  // check will catch up.
+  if (!box || box.contains(document.activeElement)) return;
+  box.innerHTML = signupResults();
+}
+// The sidebar's Event Sign-Up link follows the hub bundle, which only refreshes
+// every few minutes; keep it in step with what this page just learned.
+function syncSignupNav() {
+  const cfgNow = (state.data && state.data.config) || null;
+  const sd = state.signupData;
+  if (!cfgNow || !sd || sd.error || !!cfgNow.event_signup_open === !!sd.open) return;
+  cfgNow.event_signup_open = !!sd.open;
+  renderNav();
+}
+document.addEventListener('visibilitychange', () => {
+  // Back on the tab: check now rather than waiting out the timer.
+  if (document.visibilityState === 'visible' && state.page === 'signup' && !state.signupLoading) { clearTimeout(signupPollTimer); pollSignup(); }
+});
 const spotsText = (e) => {
   const left = Math.max(0, e.max_entries - e.taken);
   // "1 of 2 spots left", "1 of 1 team left"
@@ -842,7 +912,7 @@ function renderSignup() {
   }
   if (!sd.open && !sd.preview) {
     return `${heading('Event Sign-Up', 'Sign up for a competitive event.')}
-    <section class="m-section-card"><div class="empty-state"><h2>${sd.error ? "Event sign-up didn't load." : "Event sign-up isn't open right now."}</h2><p>${sd.error ? 'Check your connection and refresh the page.' : 'Officers will open it when it is time to choose events.'}</p></div></section>`;
+    <section class="m-section-card"><div class="empty-state"><h2>${sd.error ? "Event sign-up didn't load." : "Event sign-up isn't open right now."}</h2><p>${sd.error ? 'Trying again…' : 'Officers will open it when it is time to choose events. Keep this page open: the events will show up here by themselves, no need to refresh.'}</p></div></section>`;
   }
   return `${heading('Event Sign-Up', 'Sign up for a competitive event, and add your teammates if it is a team event.')}
   <section class="m-section-card su">
