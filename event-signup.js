@@ -349,8 +349,12 @@ async function setSignupCode({ required, code }) {
   await db.setSetting('signup_code_required', on ? '1' : '0');
   return { code_required: on, code: next, changed: next !== cur.code };
 }
-async function whoHas(d, ids) {
-  const claim = await d.collection(C.claims).findOne({ _id: { $in: ids } });
+// The claim (if any) someone already holds. `exceptSignupId`: ignore the
+// claims of that sign-up (when an officer is editing it).
+async function whoHas(d, ids, exceptSignupId = null) {
+  const q = { _id: { $in: ids } };
+  if (exceptSignupId != null) q.signup_id = { $ne: exceptSignupId };
+  const claim = await d.collection(C.claims).findOne(q);
   return claim || null;
 }
 function alreadyMessage(claim) {
@@ -359,7 +363,11 @@ function alreadyMessage(claim) {
 
 // Resolve every name for an event and check team size, duplicates and grade.
 // Pure checks only; the database-level checks happen in createSignup.
-async function prepare(ev, names, d, strict) {
+// `edit` (officers changing a sign-up): { keep: its current people, signupId }.
+// A name that's already on the sign-up is kept as it is (even if it isn't on
+// the member list, e.g. added before the list existed); new names follow the
+// usual rules, and the sign-up's own claims don't count as "already signed up".
+async function prepare(ev, names, d, strict, edit = null) {
   const list = (Array.isArray(names) ? names : []).map(s => String(s || '').trim()).filter(Boolean);
   if (!list.length) throw new SignupError('Enter your name.', 400, { field: 0 });
   if (!ev.team && list.length > 1) throw new SignupError(`${ev.name} is an individual event. Sign up just one person.`);
@@ -368,7 +376,12 @@ async function prepare(ev, names, d, strict) {
   const roster = await d.collection(C.roster).find({}).toArray();
   const people = [];
   for (let i = 0; i < list.length; i++) {
-    const r = resolveName(list[i], roster);
+    const kept = edit && (edit.keep || []).find(p => normName(p.name) === normName(list[i]));
+    let r;
+    if (kept) {
+      const m = kept.roster_id ? roster.find(x => x.id === kept.roster_id) : null;
+      r = { ok: true, name: kept.name, key: kept.key, roster_id: kept.roster_id || null, grade: m ? m.grade || null : null };
+    } else r = resolveName(list[i], roster);
     if (!r.ok) throw new SignupError(r.error, 400, { field: i });
     if (people.some(p => p.key === r.key)) throw new SignupError(`${r.name} is listed more than once.`, 400, { field: i });
     if (ev.grades === '9-10' && r.grade && !['9', '10'].includes(String(r.grade))) {
@@ -376,7 +389,7 @@ async function prepare(ev, names, d, strict) {
     }
     people.push({ name: r.name, key: r.key, roster_id: r.roster_id });
   }
-  const held = await whoHas(d, people.flatMap(p => claimIds(p.key, ev.chapter, strict)));
+  const held = await whoHas(d, people.flatMap(p => claimIds(p.key, ev.chapter, strict)), edit ? edit.signupId : null);
   if (held) throw new SignupError(alreadyMessage(held), 409);
   return people;
 }
@@ -506,6 +519,60 @@ async function createSignup({ eventId, names, source = 'member', byName = null }
   });
   const { _id, ...out } = doc;
   return out;
+}
+
+// Officers: change a sign-up's event and/or people (add a teammate, swap the
+// event, fix a name). Same rules as a new sign-up (the event's limit, team
+// size, one event per person, member list, grade), checked against everyone
+// else. All in one transaction: the sign-up is either fully updated or left
+// exactly as it was. Returns { before, after }.
+async function updateSignup(id, { eventId, names, byName = null }) {
+  const { d, client } = await mdb();
+  const { strict } = await settingsFlags();
+  const cur = await d.collection(C.signups).findOne({ _id: String(Number(id)) });
+  if (!cur) throw new SignupError('That sign-up is gone. Refresh the page.', 404);
+  const ev = await d.collection(C.events).findOne({ _id: String(Number(eventId == null || eventId === '' ? cur.event_id : eventId)) });
+  if (!ev) throw new SignupError('That event is no longer available. Refresh the page.', 404);
+  const people = await prepare(ev, names, d, strict, { keep: cur.people, signupId: cur.id });
+  const moving = ev.id !== cur.event_id;
+  const after = await takeTurn(ev.id, async () => {
+    const session = client.startSession();
+    let doc = null;
+    try {
+      await session.withTransaction(async () => {
+        const now = await d.collection(C.signups).findOne({ _id: cur._id }, { session });
+        if (!now) throw new SignupError('That sign-up is gone. Refresh the page.', 404);
+        // Lock the event it's going to (as a new sign-up does), so the count can't go stale.
+        const fresh = await d.collection(C.events).findOneAndUpdate({ _id: ev._id }, { $inc: { lock: 1 } }, { session, returnDocument: 'after' });
+        if (!fresh) throw new SignupError('That event is no longer available. Refresh the page.', 404);
+        if (ev.id !== now.event_id) {
+          const taken = await d.collection(C.signups).countDocuments({ event_id: ev.id }, { session });
+          if (taken >= fresh.max_entries) throw fullError(fresh);
+          await d.collection(C.events).updateOne({ id: now.event_id }, { $inc: { lock: 1 } }, { session });
+        }
+        // Swap this sign-up's claims for the new ones; a person someone else
+        // already holds fails the insert (unique _id) and nothing is changed.
+        await d.collection(C.claims).deleteMany({ signup_id: now.id }, { session });
+        const claims = people.flatMap(p => claimIds(p.key, ev.chapter, strict).map(cid => ({ _id: cid, signup_id: now.id, event_id: ev.id, event_name: ev.name, name: p.name })));
+        await d.collection(C.claims).insertMany(claims, { session, ordered: true });
+        const set = { event_id: ev.id, event_name: ev.name, chapter: !!ev.chapter, people, updated_at: db.tsString(), updated_by: byName };
+        await d.collection(C.signups).updateOne({ _id: now._id }, { $set: set }, { session });
+        doc = { ...now, ...set };
+      });
+    } catch (e) {
+      if (e instanceof SignupError) throw e;
+      if (e && (e.code === 11000 || /E11000/.test(e.message || ''))) {
+        const held = await whoHas(d, people.flatMap(p => claimIds(p.key, ev.chapter, strict)), cur.id);
+        throw new SignupError(held ? alreadyMessage(held) : 'Someone on this team just signed up for another event. Refresh and try again.', 409);
+      }
+      throw e;
+    } finally {
+      await session.endSession();
+    }
+    return doc;
+  });
+  const strip = ({ _id, ...x }) => x;
+  return { before: strip(cur), after: strip(after), moved: moving };
 }
 
 async function deleteSignup(id) {
@@ -658,7 +725,7 @@ module.exports = {
   deleteRosterMember: dropping(deleteRosterMember), clearRoster: dropping(clearRoster),
   listEvents, addEvent: dropping(addEvent), updateEvent: dropping(updateEvent), deleteEvent: dropping(deleteEvent),
   loadDefaultEvents: dropping(loadDefaultEvents),
-  checkName, createSignup, deleteSignup: dropping(deleteSignup), listSignups, setOneEventOnly: dropping(setOneEventOnly), settingsFlags,
+  checkName, createSignup, updateSignup: dropping(updateSignup), deleteSignup: dropping(deleteSignup), listSignups, setOneEventOnly: dropping(setOneEventOnly), settingsFlags,
   setSignupCode: dropping(setSignupCode), codeAccepted, publicEntries,
   publicSignupState, dropCaches, exportData, signupsCsv, signupsXlsx, DEFAULT_EVENTS, COLLECTIONS: C,
 };

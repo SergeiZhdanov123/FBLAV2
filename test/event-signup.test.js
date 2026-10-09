@@ -296,3 +296,64 @@ test('db: sign-up code: officers set it, the site only learns whether one is nee
   assert.equal(await su.codeAccepted(''), true);
   assert.equal((await su.publicSignupState()).code_required, false);
 });
+
+test('db: officers edit a sign-up (teammates, event) under the same rules, all or nothing', skip, async () => {
+  const mk = (name, team, min, max, entries) => su.addEvent({ name, team, min_size: min, max_size: max, max_entries: entries });
+  const T = await mk('Edit Test Team', true, 1, 3, 2), S = await mk('Edit Test Solo', false, 1, 1, 2), F = await mk('Edit Test Full', true, 1, 3, 1);
+  await su.addRosterMembers(['One', 'Two', 'Three', 'Four', 'Five', 'Six'].map(l => ({ first_name: 'Edd', last_name: l })), 'Officer');
+  const { strict } = await su.settingsFlags(); const per = strict ? 2 : 1;
+  const C = su.COLLECTIONS; const d = db.ensureFirebase()._db();
+  const claimsOf = async (id) => (await d.collection(C.claims).find({ signup_id: id }).toArray()).map(c => c.name).sort();
+  const count = async (evId) => d.collection(C.signups).countDocuments({ event_id: evId });
+  const a = await su.createSignup({ eventId: T.id, names: ['Edd One'] });
+  await su.createSignup({ eventId: F.id, names: ['Edd Four'] }); // F is now full
+  // Add a teammate
+  let r = await su.updateSignup(a.id, { eventId: T.id, names: ['Edd One', 'Edd Two'], byName: 'Officer' });
+  assert.deepEqual(r.after.people.map(p => p.name), ['Edd One', 'Edd Two']);
+  assert.equal(r.after.updated_by, 'Officer'); assert.ok(r.after.updated_at);
+  assert.deepEqual(await claimsOf(a.id), (strict ? ['Edd One', 'Edd One', 'Edd Two', 'Edd Two'] : ['Edd One', 'Edd Two']));
+  assert.equal(await count(T.id), 1, 'still one entry in the team event');
+  // Can't add someone already signed up elsewhere; nothing changes
+  let e = await err(su.updateSignup(a.id, { eventId: T.id, names: ['Edd One', 'Edd Two', 'Edd Four'] }));
+  assert.equal(e.status, 409); assert.match(e.message, /Edd Four is already signed up for Edit Test Full/);
+  assert.deepEqual((await claimsOf(a.id)).length, 2 * per, 'claims untouched after a refused edit');
+  // Team size and individual-event rules
+  e = await err(su.updateSignup(a.id, { eventId: T.id, names: ['Edd One', 'Edd Two', 'Edd Three', 'Edd Five'] }));
+  assert.match(e.message, /at most 3/);
+  e = await err(su.updateSignup(a.id, { eventId: S.id, names: ['Edd One', 'Edd Two'] }));
+  assert.match(e.message, /individual event/);
+  // Can't move into a full event; nothing changes
+  e = await err(su.updateSignup(a.id, { eventId: F.id, names: ['Edd One', 'Edd Two'] }));
+  assert.equal(e.status, 409); assert.match(e.message, /is full/);
+  assert.equal(await count(T.id), 1); assert.equal(await count(F.id), 1);
+  // Move to another event (dropping a teammate frees them)
+  r = await su.updateSignup(a.id, { eventId: S.id, names: ['Edd One'] });
+  assert.equal(r.moved, true); assert.equal(r.after.event_name, 'Edit Test Solo');
+  assert.equal(await count(T.id), 0, 'old event has the spot back'); assert.equal(await count(S.id), 1);
+  assert.ok((await d.collection(C.claims).find({ signup_id: a.id }).toArray()).every(c => c.event_name === 'Edit Test Solo'), 'claims follow the move');
+  const freed = await su.createSignup({ eventId: T.id, names: ['Edd Two'] });
+  assert.ok(freed.id, 'the removed teammate can sign up again');
+  // A person no longer on the member list stays when the sign-up is edited
+  const six = (await su.listRoster()).find(m => m.last_name === 'Six');
+  const b = await su.createSignup({ eventId: T.id, names: ['Edd Six'] });
+  await su.deleteRosterMember(six.id);
+  r = await su.updateSignup(b.id, { eventId: T.id, names: ['Edd Six', 'Edd Three'] });
+  assert.deepEqual(r.after.people.map(p => p.name), ['Edd Six', 'Edd Three']);
+  // ...but a NEW name still has to be on the list
+  e = await err(su.updateSignup(b.id, { eventId: T.id, names: ['Edd Six', 'Edd Three', 'Zed Nobody'] }));
+  assert.match(e.message, /isn't on the chapter's FBLA member list/);
+  // Gone sign-up / event
+  assert.equal((await err(su.updateSignup(999999, { eventId: T.id, names: ['Edd One'] }))).status, 404);
+  // Race: an officer moves a sign-up into the last spot while someone signs up for it
+  const L = await mk('Edit Test Last', false, 1, 1, 1);
+  const results = await Promise.allSettled([
+    su.updateSignup(freed.id, { eventId: L.id, names: ['Edd Two'] }),
+    su.createSignup({ eventId: L.id, names: ['Edd Five'] }),
+  ]);
+  assert.equal(results.filter(x => x.status === 'fulfilled').length, 1, 'exactly one gets the last spot');
+  assert.equal(await count(L.id), 1, 'never over the limit');
+  // Every claim belongs to a sign-up that lists that person
+  const all = await d.collection(C.signups).find({}).toArray(), claims = await d.collection(C.claims).find({}).toArray();
+  for (const c of claims) { const s = all.find(x => x.id === c.signup_id); assert.ok(s && s.people.some(p => p.name === c.name), `claim ${c._id} matches its sign-up`); }
+  assert.equal(claims.length, all.reduce((n, s) => n + s.people.length * per, 0), 'claims = people x slots');
+});

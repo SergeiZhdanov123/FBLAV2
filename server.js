@@ -918,6 +918,14 @@ app.post('/api/signup/entries', requireOfficer, sh(async (req, res) => {
   await db.logAudit(req.session.name, 'event_signup', `${out.event_name}: ${out.people.map(p => p.name).join(', ')} (added by an officer)`);
   res.json(out);
 }));
+// Change a sign-up: its event and/or people (add a teammate, swap the event).
+app.put('/api/signup/entries/:id', requireOfficer, sh(async (req, res) => {
+  const b = req.body || {};
+  const r = await signup.updateSignup(req.params.id, { eventId: b.event_id, names: Array.isArray(b.names) ? b.names.slice(0, 12).map(n => String(n || '').slice(0, 120)) : [], byName: req.session.name });
+  const who = (x) => `${x.event_name}: ${x.people.map(p => p.name).join(', ')}`;
+  await db.logAudit(req.session.name, 'event_signup_edit', `${who(r.before)} -> ${who(r.after)}`);
+  res.json(r.after);
+}));
 app.delete('/api/signup/entries/:id', requireOfficer, sh(async (req, res) => {
   const s = await signup.deleteSignup(req.params.id);
   await db.logAudit(req.session.name, 'event_signup_remove', `${s.event_name}: ${s.people.map(p => p.name).join(', ')}`);

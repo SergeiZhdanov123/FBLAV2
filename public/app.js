@@ -3221,8 +3221,8 @@ function renderEventSignup() {
     <tr>
       <td><strong>${esc(x.event_name)}</strong></td>
       <td>${x.people.map(p => `${esc(p.name)}${p.on_roster === false ? ' <span class="badge overdue" title="This name is not on the FBLA member list">Not on member list</span>' : ''}`).join('<br/>')}</td>
-      <td>${x.source === 'officer' ? `Added by ${esc(x.submitted_by || 'an officer')}` : 'Signed up on the site'}<br/><span class="muted">${esc(x.created_at || '')}</span></td>
-      <td><button class="btn small danger" onclick="deleteSignupEntry(${x.id})">Remove</button></td>
+      <td>${x.source === 'officer' ? `Added by ${esc(x.submitted_by || 'an officer')}` : 'Signed up on the site'}<br/><span class="muted">${esc(x.created_at || '')}</span>${x.updated_at ? `<br/><span class="muted">Edited${x.updated_by ? ` by ${esc(x.updated_by)}` : ''} ${esc(x.updated_at)}</span>` : ''}</td>
+      <td style="white-space:nowrap;"><button class="btn small secondary" onclick="openSignupEntryForm(${x.id})">Edit</button> <button class="btn small danger" onclick="deleteSignupEntry(${x.id})">Remove</button></td>
     </tr>`;
   const sortedSignups = [...s.signups].sort((a, b) => a.event_name.localeCompare(b.event_name) || a.id - b.id);
   el.innerHTML = `
@@ -3343,30 +3343,45 @@ window.deleteSignupEvent = async function(id) {
   if (!e || !confirm(`Remove ${e.name} from Event Sign-Up?`)) return;
   try { await api('DELETE', '/api/signup/events/' + id); await reloadSignup(); } catch (err) { alert(err.message); }
 };
-window.openSignupEntryForm = function() {
-  const events = (state.signup.events || []).filter(e => e.taken < e.max_entries);
+// Add a sign-up, or (with an id) change one: its event and/or its people.
+window.openSignupEntryForm = function(id) {
+  const editing = id ? (state.signup.signups || []).find(x => x.id === id) : null;
+  if (id && !editing) { alert('That sign-up is gone. Refresh the page.'); return; }
+  // Events with room, plus (when editing) the sign-up's own event even if it's full.
+  const events = (state.signup.events || []).filter(e => e.taken < e.max_entries || (editing && e.id === editing.event_id));
   if (!events.length) { alert('Every event is full.'); return; }
-  showModal('Add a sign-up', `
-    <p class="hint" style="margin-top:0;">Officers can add sign-ups even while sign-up is closed. The same rules apply: one event per person, the event's limit, team size, and the member list.</p>
+  const left = (e) => (editing && e.id === editing.event_id ? 'current event' : `${e.max_entries - e.taken} left`);
+  signupEntryNames = editing ? editing.people.map(p => p.name) : [];
+  showModal(editing ? 'Edit sign-up' : 'Add a sign-up', `
+    <p class="hint" style="margin-top:0;">${editing
+      ? 'Change the event, add or remove teammates, or fix a name. The same rules apply as a new sign-up (one event per person, the event\'s limit, team size, the member list); people already on this sign-up stay as they are.'
+      : 'Officers can add sign-ups even while sign-up is closed. The same rules apply: one event per person, the event\'s limit, team size, and the member list.'}</p>
     <div class="form-row"><label>Event</label>
-      <select id="sx-event" onchange="renderSignupEntryNames()">
-        ${events.map(e => `<option value="${e.id}">${esc(e.name)} (${signupSizeText(e)}, ${e.max_entries - e.taken} left)</option>`).join('')}
+      <select id="sx-event" onchange="renderSignupEntryNames(true)">
+        ${events.map(e => `<option value="${e.id}" ${editing && e.id === editing.event_id ? 'selected' : ''}>${esc(e.name)} (${signupSizeText(e)}, ${left(e)})</option>`).join('')}
       </select>
     </div>
     <div id="sx-names"></div>
   `, async () => {
     const names = [...$$('#sx-names input')].map(i => i.value.trim()).filter(Boolean);
-    await api('POST', '/api/signup/entries', { event_id: Number($('#sx-event').value), names });
+    const body = { event_id: Number($('#sx-event').value), names };
+    if (editing) await api('PUT', '/api/signup/entries/' + editing.id, body);
+    else await api('POST', '/api/signup/entries', body);
     await reloadSignup();
     return true;
-  }, 'Add sign-up');
-  renderSignupEntryNames();
+  }, editing ? 'Save changes' : 'Add sign-up');
+  renderSignupEntryNames(false);
 };
-window.renderSignupEntryNames = function() {
+// Names typed so far, kept when the event (and so the number of boxes) changes.
+let signupEntryNames = [];
+window.renderSignupEntryNames = function(keepTyped) {
   const e = (state.signup.events || []).find(x => x.id === Number($('#sx-event').value));
   if (!e) return;
-  $('#sx-names').innerHTML = Array.from({ length: e.max_size }, (_, i) => `
-    <div class="form-row"><label>${e.team ? (i === 0 ? 'Person 1' : `Person ${i + 1}${i < e.min_size ? '' : ' (optional)'}`) : 'Name'}</label><input maxlength="120" placeholder="First and last name" /></div>`).join('');
+  if (keepTyped) signupEntryNames = [...$$('#sx-names input')].map(i => i.value);
+  const filled = signupEntryNames.filter(n => String(n || '').trim());
+  const boxes = Math.max(e.max_size, filled.length);
+  $('#sx-names').innerHTML = Array.from({ length: boxes }, (_, i) => `
+    <div class="form-row"><label>${e.team ? (i === 0 ? 'Person 1' : `Person ${i + 1}${i < e.min_size ? '' : ' (optional)'}`) : (i === 0 ? 'Name' : `Name ${i + 1} (individual event: remove this)`)}</label><input maxlength="120" placeholder="First and last name" value="${esc(filled[i] || '')}" /></div>`).join('');
 };
 window.deleteSignupEntry = async function(id) {
   const x = (state.signup.signups || []).find(s => s.id === id);
