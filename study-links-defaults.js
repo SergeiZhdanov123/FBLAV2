@@ -5,13 +5,11 @@
 // there are skipped, so loading twice adds nothing.
 const GROUP = 'Competitive Events Zoom Sessions';
 const zoom = (id) => `https://us02web.zoom.us/meeting/register/${id}`;
-const event = (title, when, id) => ({
-  title, url: zoom(id), competitive_event: GROUP,
-  description: `${when} · About 30 minutes, only this event is covered. Register first.`,
-});
+// Each event session runs about 30 minutes and covers only the events named.
+const event = (title, when, id) => ({ title, url: zoom(id), competitive_event: GROUP, description: when });
 module.exports = [
   { title: '2026-27 Competitive Events Changes for PA', url: zoom('KH0eDU1KSSKWEQqoxiJ--w'), competitive_event: GROUP,
-    description: 'Sep 30 · 4:00 PM · All of this year\'s competitive event changes, with Derek Selleck (PA FBLA Competitive Events Coordinator). Open to advisers and members. Register first.' },
+    description: 'Sep 30 · 4:00 PM · Every 2026-27 event change, with Derek Selleck (PA FBLA). For advisers and members' },
   event('Objective Test Only Events', 'Oct 1 · 7:00 PM', 'OqB6e_TzTb2NHrcxDC7q6A'),
   event('Objective Tests with Role Plays', 'Oct 1 · 7:45 PM', '4eVxwHVSTkWImFEmLMF-zA'),
   event('Computer Applications', 'Oct 1 · 8:30 PM', 'NNEklDHJRq-7WarJM2zzbQ'),

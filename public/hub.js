@@ -1235,6 +1235,29 @@ function prepResults() {
 // Study & Prep has two tabs: study materials (#prep) and links (#prep/links).
 function prepTabFromHash() { return location.hash.slice(1).split('/')[1] === 'links' ? 'links' : 'materials'; }
 const studyLinks = () => (D().resources || []).filter(r => r.kind === 'link').sort((a, b) => a.id - b.id);
+// A link's details can start with when it happens ("Oct 5 · 7:45 PM · ...").
+// That date goes in its own column, and sessions that are over move to a
+// folded "Past sessions" list. Dates are read within the school year (Aug-Jul).
+const LINK_MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function linkWhen(r) {
+  const m = /^([A-Za-z]{3,9})\.? (\d{1,2})(?:\s*·\s*(\d{1,2}(?::\d{2})?\s*[AaPp]\.?[Mm]\.?))?(?:\s*·\s*(.+))?$/.exec((r.description || '').trim());
+  const mon = m ? LINK_MONTHS.indexOf(m[1].slice(0, 3).toLowerCase()) : -1;
+  if (mon < 0) return { day: '', time: '', note: r.description || '', past: false };
+  const now = new Date();
+  const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1; // school year starts in the summer
+  const date = new Date(mon >= 7 ? start : start + 1, mon, Number(m[2]));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return { day: `${m[1].slice(0, 3)} ${m[2]}`, time: (m[3] || '').toUpperCase().replace(/\./g, ''), note: m[4] || '', past: date < today };
+}
+function linkRow(r) {
+  const href = safeUrl(r.url), w = linkWhen(r);
+  const label = /zoom\.us\/meeting\/register|\/register/i.test(r.url || '') ? 'Register' : 'Open';
+  const inner = `
+    ${w.day ? `<span class="lk-when"><span>${esc(w.day)}</span>${w.time ? `<span class="lk-time">${esc(w.time)}</span>` : ''}</span>` : ''}
+    <span class="lk-text"><span class="lk-title">${esc(r.title)}</span>${w.note ? `<span class="lk-note">${esc(w.note)}</span>` : ''}</span>
+    ${href ? `<span class="lk-go">${label}${icon('external')}</span>` : ''}`;
+  return `<li>${href ? `<a class="lk-row${w.day ? '' : ' no-when'}" href="${href}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>` : `<div class="lk-row${w.day ? '' : ' no-when'}">${inner}</div>`}</li>`;
+}
 function linkResults() {
   const q = state.prepQuery.trim().toLowerCase();
   const found = studyLinks().filter(r => !q || `${r.title} ${r.description || ''} ${r.competitive_event || ''}`.toLowerCase().includes(q));
@@ -1244,29 +1267,25 @@ function linkResults() {
   // Grouped by heading, in the order officers added them.
   const groups = new Map();
   found.forEach(r => { const g = (r.competitive_event || '').trim() || 'Links'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); });
-  const row = (r) => {
-    const href = safeUrl(r.url);
-    const inner = `<span class="link-main"><strong>${esc(r.title)}</strong>${r.description ? `<span class="link-desc">${esc(r.description)}</span>` : ''}</span>
-      <span class="link-go">${href ? `${esc(linkSource(r.url) || 'Open')} ${icon('external')}` : 'Link coming soon'}</span>`;
-    return `<li>${href ? `<a class="link-row" href="${href}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>` : `<div class="link-row">${inner}</div>`}</li>`;
-  };
-  return [...groups].map(([g, list]) => `
-    <div class="prep-section">
-      <h2 class="prep-section-title">${esc(g)} <span>${list.length}</span></h2>
-      <ul class="link-list">${list.map(row).join('')}</ul>
-    </div>`).join('');
+  return [...groups].map(([g, list]) => {
+    const upcoming = list.filter(r => !linkWhen(r).past), past = list.filter(r => linkWhen(r).past);
+    return `
+    <section class="lk-group">
+      <h2 class="lk-head">${esc(g)}</h2>
+      ${upcoming.length ? `<ul class="lk-list">${upcoming.map(linkRow).join('')}</ul>` : '<p class="lk-none">Nothing coming up.</p>'}
+      ${past.length ? `<details class="lk-past"${q && !upcoming.length ? ' open' : ''}><summary>Past sessions (${past.length})</summary><ul class="lk-list">${past.map(linkRow).join('')}</ul></details>` : ''}
+    </section>`;
+  }).join('');
 }
 function renderPrep() {
   const links = state.prepTab === 'links';
-  const nLinks = studyLinks().length;
-  const nMaterials = (D().resources || []).filter(r => r.kind === 'resource').length;
   return `${heading('Study &amp; Prep', 'Competitive-event guides, conference prep, and chapter study materials.')}
   <section class="m-section-card">
     ${quizVisible() ? '<p class="quiz-pointer">Not sure which event to pick? <a href="#event-quiz">Take the Event Recommendation Quiz →</a></p>' : ''}
-    <nav class="prep-tabs" aria-label="Study & Prep">
-      <a href="#prep" class="prep-tab ${links ? '' : 'is-on'}" ${links ? '' : 'aria-current="page"'}>Study materials <span>${nMaterials}</span></a>
-      <a href="#prep/links" class="prep-tab ${links ? 'is-on' : ''}" ${links ? 'aria-current="page"' : ''}>Links <span>${nLinks}</span></a>
-    </nav>
+    <div class="prep-tabs" role="navigation" aria-label="Study & Prep">
+      <a href="#prep" class="prep-tab ${links ? '' : 'is-on'}" ${links ? '' : 'aria-current="page"'}>Study materials</a>
+      <a href="#prep/links" class="prep-tab ${links ? 'is-on' : ''}" ${links ? 'aria-current="page"' : ''}>Links</a>
+    </div>
     <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="prep-search" type="search" placeholder="${links ? 'Search links, e.g. an event name' : 'Search study materials, e.g. an event name'}" value="${esc(state.prepQuery)}" aria-label="${links ? 'Search links' : 'Search study materials'}" /></label></div>
     <div id="prep-results">${links ? linkResults() : prepResults()}</div>
   </section>`;
