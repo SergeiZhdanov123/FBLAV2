@@ -357,3 +357,28 @@ test('db: officers edit a sign-up (teammates, event) under the same rules, all o
   for (const c of claims) { const s = all.find(x => x.id === c.signup_id); assert.ok(s && s.people.some(p => p.name === c.name), `claim ${c._id} matches its sign-up`); }
   assert.equal(claims.length, all.reduce((n, s) => n + s.people.length * per, 0), 'claims = people x slots');
 });
+
+test('db: Study & Prep links: load the PA FBLA Zoom links once, officers add their own', skip, async () => {
+  const defaults = require('../study-links-defaults');
+  assert.equal(defaults.length, 25);
+  assert.equal(new Set(defaults.map(l => l.url)).size, 25, 'no duplicate links');
+  assert.ok(defaults.every(l => /^https:\/\/us02web\.zoom\.us\/meeting\/register\/[\w-]+$/.test(l.url) && l.title && l.description), 'every link is a Zoom registration link with a title and details');
+  let r = await db.loadStudyLinks('Officer');
+  assert.deepEqual([r.added, r.already], [25, 0]);
+  r = await db.loadStudyLinks('Officer');
+  assert.deepEqual([r.added, r.already], [0, 25], 'loading twice adds nothing');
+  // Officers add their own; a link needs a URL
+  await assert.rejects(db.addSlideshow({ kind: 'link', title: 'No URL' }, 'Officer'), /needs a URL/);
+  const mine = await db.addSlideshow({ kind: 'link', title: 'PA FBLA site', url: 'https://www.pafbla.org', competitive_event: 'Useful sites' }, 'Officer');
+  assert.equal(mine.kind, 'link');
+  // On the public site, in order, and nowhere else
+  const hub = await db.publicHub();
+  const links = hub.resources.filter(x => x.kind === 'link').sort((a, b) => a.id - b.id);
+  assert.equal(links.length, 26);
+  assert.equal(links[0].title, '2026-27 Competitive Events Changes for PA');
+  assert.equal(links[25].title, 'PA FBLA site');
+  // Archived links leave the site; deleting one lets the loader put it back
+  await db.setSlideshowArchived(links[1].id, true);
+  assert.equal((await db.publicHub()).resources.filter(x => x.kind === 'link').length, 25);
+  assert.equal((await db.loadStudyLinks('Officer')).added, 0, 'an archived link is not re-added');
+});

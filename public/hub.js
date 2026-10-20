@@ -65,6 +65,7 @@ const RESOURCE_KINDS = {
   slideshow: { page: 'resources', title: 'Meeting Resources', one: 'Meeting resource', icon: 'slides' },
   resource: { page: 'prep', title: 'Study & Prep', one: 'Study material', icon: 'book' },
   general: { page: 'general', title: 'General Resources', one: 'General resource', icon: 'folder' },
+  link: { page: 'prep', title: 'Study & Prep links', one: 'Link', icon: 'book' },
 };
 const kindInfo = (kind) => RESOURCE_KINDS[kind] || RESOURCE_KINDS.slideshow;
 const PAGE_TITLES = Object.fromEntries(NAV.map(([id, , title]) => [id, title]));
@@ -1231,12 +1232,43 @@ function prepResults() {
     </div>` : '';
   return section('All Events', all) + section('Individual Events', each);
 }
+// Study & Prep has two tabs: study materials (#prep) and links (#prep/links).
+function prepTabFromHash() { return location.hash.slice(1).split('/')[1] === 'links' ? 'links' : 'materials'; }
+const studyLinks = () => (D().resources || []).filter(r => r.kind === 'link').sort((a, b) => a.id - b.id);
+function linkResults() {
+  const q = state.prepQuery.trim().toLowerCase();
+  const found = studyLinks().filter(r => !q || `${r.title} ${r.description || ''} ${r.competitive_event || ''}`.toLowerCase().includes(q));
+  if (!found.length) {
+    return q ? '<div class="empty-state"><h2>No matching links.</h2></div>' : '<div class="empty-state"><h2>No links yet.</h2></div>';
+  }
+  // Grouped by heading, in the order officers added them.
+  const groups = new Map();
+  found.forEach(r => { const g = (r.competitive_event || '').trim() || 'Links'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); });
+  const row = (r) => {
+    const href = safeUrl(r.url);
+    const inner = `<span class="link-main"><strong>${esc(r.title)}</strong>${r.description ? `<span class="link-desc">${esc(r.description)}</span>` : ''}</span>
+      <span class="link-go">${href ? `${esc(linkSource(r.url) || 'Open')} ${icon('external')}` : 'Link coming soon'}</span>`;
+    return `<li>${href ? `<a class="link-row" href="${href}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>` : `<div class="link-row">${inner}</div>`}</li>`;
+  };
+  return [...groups].map(([g, list]) => `
+    <div class="prep-section">
+      <h2 class="prep-section-title">${esc(g)} <span>${list.length}</span></h2>
+      <ul class="link-list">${list.map(row).join('')}</ul>
+    </div>`).join('');
+}
 function renderPrep() {
+  const links = state.prepTab === 'links';
+  const nLinks = studyLinks().length;
+  const nMaterials = (D().resources || []).filter(r => r.kind === 'resource').length;
   return `${heading('Study &amp; Prep', 'Competitive-event guides, conference prep, and chapter study materials.')}
   <section class="m-section-card">
     ${quizVisible() ? '<p class="quiz-pointer">Not sure which event to pick? <a href="#event-quiz">Take the Event Recommendation Quiz →</a></p>' : ''}
-    <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="prep-search" type="search" placeholder="Search study materials, e.g. an event name" value="${esc(state.prepQuery)}" aria-label="Search study materials" /></label></div>
-    <div id="prep-results">${prepResults()}</div>
+    <nav class="prep-tabs" aria-label="Study & Prep">
+      <a href="#prep" class="prep-tab ${links ? '' : 'is-on'}" ${links ? '' : 'aria-current="page"'}>Study materials <span>${nMaterials}</span></a>
+      <a href="#prep/links" class="prep-tab ${links ? 'is-on' : ''}" ${links ? 'aria-current="page"' : ''}>Links <span>${nLinks}</span></a>
+    </nav>
+    <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="prep-search" type="search" placeholder="${links ? 'Search links, e.g. an event name' : 'Search study materials, e.g. an event name'}" value="${esc(state.prepQuery)}" aria-label="${links ? 'Search links' : 'Search study materials'}" /></label></div>
+    <div id="prep-results">${links ? linkResults() : prepResults()}</div>
   </section>`;
 }
 
@@ -1279,6 +1311,9 @@ function route() {
   closeCalPopover();
   const page = location.hash.slice(1).split('/')[0];
   state.page = PAGE_TITLES[page] ? page : 'home';
+  const tab = prepTabFromHash();
+  if (tab !== state.prepTab) state.prepQuery = ''; // each Study & Prep tab starts with an empty search
+  state.prepTab = tab;
   if (state.page === 'signup') loadSignup();
   hideHubSearch();
   closeMenu();
@@ -1773,7 +1808,7 @@ document.addEventListener('input', (event) => {
   if (t.id === 'hub-search') updateHubSearch();
   if (t.id === 'resource-search') { state.resourceQuery = t.value; $('#resource-results').innerHTML = resourceResults(); }
   if (t.id === 'general-search') { state.generalQuery = t.value; $('#general-results').innerHTML = generalResults(); }
-  if (t.id === 'prep-search') { state.prepQuery = t.value; $('#prep-results').innerHTML = prepResults(); }
+  if (t.id === 'prep-search') { state.prepQuery = t.value; $('#prep-results').innerHTML = state.prepTab === 'links' ? linkResults() : prepResults(); }
   if (t.id === 'su-code') { state.signupCodeDraft = t.value; const e = $('#su-code-error'); if (e) e.textContent = ''; }
   if (t.id === 'signup-search') { state.signupQuery = t.value; $('#signup-results').innerHTML = signupResults(); }
   // Editing a name clears its old check result.
@@ -1851,6 +1886,7 @@ setupAboutGalleries();
 updateOnlineStatus();
 closeMenu();
 state.page = PAGE_TITLES[location.hash.slice(1).split('/')[0]] ? location.hash.slice(1).split('/')[0] : 'home';
+state.prepTab = prepTabFromHash();
 renderNav();
 if (ABOUT_PATHS.includes(location.pathname)) showAbout(false);
 load();

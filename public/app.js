@@ -3027,8 +3027,50 @@ function renderOfficerResources() {
           <tbody>${items.map(officerLinkRow).join('')}</tbody>
         </table>` : '<div class="empty">No study resources yet.</div>'}
     </div>
+    ${officerStudyLinksPanel()}
   `;
 }
+
+// Study & Prep > Links: plain links (Zoom sessions, sign-up pages, outside
+// sites) listed on the site's Study & Prep page under its Links tab.
+const STUDY_LINKS_DEFAULT_COUNT = 25;
+function officerStudyLinksPanel() {
+  const links = (state.slideshows || []).filter(s => s.kind === 'link').sort((a, b) => a.id - b.id);
+  const zoomLoaded = links.filter(l => /us02web\.zoom\.us\/meeting\/register\//.test(l.url || '')).length;
+  const linkRow = (s) => `
+    <tr ${s.archived ? 'style="opacity:0.55;"' : ''}>
+      <td><strong>${esc(s.title)}</strong> ${s.archived ? '<span class="badge unpaid">Archived</span>' : ''}${s.description ? `<div style="font-size:12px;color:var(--muted);">${esc(s.description)}</div>` : ''}</td>
+      <td style="max-width:260px;word-break:break-all;">${s.url ? `<a href="${safeUrl(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a>` : ''}</td>
+      <td>${s.competitive_event ? `<span class="badge neutral">${esc(s.competitive_event)}</span>` : '<span class="muted">Links</span>'}</td>
+      <td>${esc(s.created_by || '')}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn small secondary" onclick="toggleSlideshowArchived(${s.id}, ${s.archived ? 'false' : 'true'})">${s.archived ? 'Restore' : 'Archive'}</button>
+        <button class="btn small danger" onclick="deleteSlideshow(${s.id})">Delete</button>
+      </td>
+    </tr>`;
+  return `
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Links (${links.length})</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${zoomLoaded < STUDY_LINKS_DEFAULT_COUNT ? '<button class="btn small secondary" onclick="loadStudyLinks()">Load the PA FBLA Zoom session links</button>' : ''}
+          <button class="btn small" onclick="openSlideshowForm('link')">+ Add Link</button>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:0;">Shown on the site's Study &amp; Prep page under <strong>Links</strong>, grouped by heading, in the order added. Archive a link to take it off the site without deleting it.</p>
+      ${links.length ? `<div class="table-scroll"><table>
+        <thead><tr><th>Link</th><th>URL</th><th>Heading</th><th>Added By</th><th></th></tr></thead>
+        <tbody>${links.map(linkRow).join('')}</tbody>
+      </table></div>` : '<div class="empty">No links yet. <strong>Load the PA FBLA Zoom session links</strong> adds the 25 competitive-event Zoom sessions (registration links), or add your own.</div>'}
+    </div>`;
+}
+window.loadStudyLinks = async function() {
+  try {
+    const r = await api('POST', '/api/slideshows/load-links');
+    await loadAll(); render();
+    alert(r.added ? `Added ${r.added} links.${r.already ? ` ${r.already} were already there.` : ''}` : 'All the PA FBLA Zoom session links are already there.');
+  } catch (e) { alert(e.message); }
+};
 
 function renderOfficerGeneral() {
   const el = $('#tab-general-resources');
@@ -3056,6 +3098,7 @@ window.toggleSlideshowArchived = async function(id, archived) {
   await loadAll(); render();
 };
 function openSlideshowForm(kind) {
+  if (kind === 'link') return openStudyLinkForm();
   const label = { resource: 'Study Resource', general: 'General Resource' }[kind] || 'Meeting Resource';
   const placeholder = { resource: 'e.g. Business Management study guide', general: 'e.g. Chapter handbook' }[kind] || 'e.g. Sept 12 meeting slides';
   showModal(`Add ${label}`, `
@@ -3093,6 +3136,30 @@ function openSlideshowForm(kind) {
     return true;
   });
   wireCoverInput();
+}
+
+function openStudyLinkForm() {
+  const groups = [...new Set((state.slideshows || []).filter(s => s.kind === 'link' && s.competitive_event).map(s => s.competitive_event))];
+  showModal('Add Link', `
+    <div class="form-row"><label>Title</label><input id="sl-title" placeholder="e.g. Business Plan Zoom session" /></div>
+    <div class="form-row"><label>Link (URL)</label><input id="sl-url" placeholder="https://..." /></div>
+    <div class="form-row"><label>Details (optional)</label><input id="sl-desc" placeholder="e.g. Oct 5 · 7:45 PM · Register first" /></div>
+    <div class="form-row"><label>Heading (optional)</label><input id="sl-comp" list="sl-group-list" placeholder="e.g. Competitive Events Zoom Sessions" />
+      <datalist id="sl-group-list">${groups.map(g => `<option value="${esc(g)}"></option>`).join('')}</datalist>
+    </div>
+    <p class="hint">Links with the same heading are listed together. This is public on the chapter site (Study &amp; Prep > Links).</p>
+  `, async () => {
+    const title = $('#sl-title').value.trim(), url = $('#sl-url').value.trim();
+    if (!title) { alert('Title required'); return false; }
+    if (!url) { alert('Link (URL) required'); return false; }
+    await api('POST', '/api/slideshows', {
+      kind: 'link', title, url,
+      description: $('#sl-desc').value.trim(),
+      competitive_event: $('#sl-comp').value.trim() || null,
+    });
+    await loadAll(); render();
+    return true;
+  }, 'Add Link');
 }
 
 // ---- Cover images ----

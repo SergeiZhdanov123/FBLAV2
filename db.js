@@ -996,11 +996,14 @@ async function listSlideshows(includeArchived = true) {
 async function addSlideshow(data, userName) {
   await init();
   const url = normalizeResourceUrl(data.url);
+  // slideshow = Meeting Resources, resource = Study & Prep, link = Study & Prep
+  // > Links, general = General Resources.
+  const kind = ['resource', 'general', 'link'].includes(data.kind) ? data.kind : 'slideshow';
+  if (kind === 'link' && !url) throw new Error('A link needs a URL.');
   const id = await nextId('slideshows');
   const doc = {
     id,
-    // slideshow = Meeting Resources, resource = Study & Prep, general = General Resources.
-    kind: ['resource', 'general'].includes(data.kind) ? data.kind : 'slideshow',
+    kind,
     title: data.title || '',
     url,
     description: data.description || null,
@@ -1016,6 +1019,20 @@ async function addSlideshow(data, userName) {
   };
   await docRef('slideshows', id).set(doc);
   return doc;
+}
+// Study & Prep > Links: add the built-in PA FBLA Zoom session links that
+// aren't there yet (matched by URL, archived ones included), in order.
+async function loadStudyLinks(userName) {
+  await init();
+  const defaults = require('./study-links-defaults');
+  const have = new Set((await getAll('slideshows')).filter(s => s.kind === 'link').map(s => s.url));
+  let added = 0;
+  for (const l of defaults) {
+    if (have.has(normalizeResourceUrl(l.url))) continue;
+    await addSlideshow({ ...l, kind: 'link' }, userName);
+    added++;
+  }
+  return { added, already: defaults.length - added, total: defaults.length };
 }
 async function setSlideshowArchived(id, archived) {
   await init();
@@ -1660,7 +1677,7 @@ module.exports = {
   listDepositSlips, getDepositSlip, createDepositSlip, deleteDepositSlip, markDepositSubmitted,
   listPurchaseOrders, getPurchaseOrder, createPurchaseOrder, deletePurchaseOrder, markPOSubmitted,
   backupJson,
-  listSlideshows, addSlideshow, deleteSlideshow, setSlideshowArchived, markSlideshowReviewed,
+  listSlideshows, addSlideshow, loadStudyLinks, deleteSlideshow, setSlideshowArchived, markSlideshowReviewed,
   setResourceCover, removeResourceCover, getResourceCover,
   publicHub, publicConfig, competitiveEvents, DEFAULT_COMPETITIVE_EVENTS, systemStats,
 };

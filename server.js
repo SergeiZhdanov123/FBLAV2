@@ -698,6 +698,12 @@ app.post('/api/google-sheets-backup/sync', requireAdmin, ah(async (req, res) => 
 
 // ---- Meeting Resources + Study & Prep (the `slideshows` collection) ----
 app.get('/api/slideshows', requireOfficer, ah(async (req, res) => res.json(await db.listSlideshows(true))));
+// Study & Prep > Links: load the built-in PA FBLA Zoom session links (skips any already there).
+app.post('/api/slideshows/load-links', requireOfficer, ah(async (req, res) => {
+  const r = await db.loadStudyLinks(req.session.name);
+  await db.logAudit(req.session.name, 'study_links_load', `Loaded ${r.added} PA FBLA Zoom session links`);
+  res.json(r);
+}));
 app.post('/api/slideshows', requireOfficer, ah(async (req, res) => {
   try {
     const s = await db.addSlideshow(req.body, req.session.name);
