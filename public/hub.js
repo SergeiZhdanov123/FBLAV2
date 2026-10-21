@@ -13,6 +13,7 @@
 'use strict';
 
 const icons = {
+  people: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19.5c.5-3.4 2.7-5.3 5.5-5.3s5 1.9 5.5 5.3"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.3c2.5-.2 4.2 1.5 4.6 4.5"/>',
   home: '<path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18m-13 4h2m4 0h2"/>',
   bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
@@ -74,6 +75,10 @@ PAGE_TITLES['event-quiz'] = 'Event Quiz'; // linked from Forms; not in the menu
 const SIGNUP_NAV = ['signup', 'check', 'Event Sign-Up'];
 PAGE_TITLES.signup = 'Event Sign-Up';
 const signupOpen = () => !!cfg().event_signup_open;
+// Buddy System: in the menu only while officers have it turned on.
+const BUDDY_NAV = ['buddies', 'people', 'Buddy System'];
+PAGE_TITLES.buddies = 'Buddy System';
+const buddyVisible = () => !!cfg().buddy_visible;
 
 const now = new Date();
 const state = {
@@ -85,6 +90,7 @@ const state = {
   updateFilter: 'All',
   resourceQuery: '',
   prepQuery: '',
+  buddyQuery: '',
   generalQuery: '',
 };
 
@@ -354,6 +360,7 @@ function updateBell() {
 function renderNav() {
   const overview = NAV.slice(0, 4);
   if (signupOpen()) overview.splice(3, 0, SIGNUP_NAV); // after Forms
+  if (buddyVisible()) overview.push(BUDDY_NAV);
   const groups = [['Overview', overview], ['Resources', NAV.slice(4, 7)]];
   const link = ([id, ic, title]) => `<a href="#${id}" class="m-nav-item ${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''} title="${esc(title)}">${icon(ic)}<span>${esc(title)}</span></a>`;
   $('#navigation').innerHTML = groups.map(([label, items]) =>
@@ -361,11 +368,11 @@ function renderNav() {
     `<p class="m-nav-label">Chapter</p><nav class="m-nav" aria-label="Chapter"><a href="/about" data-action="about" class="m-nav-item" title="About the Chapter">${icon('about')}<span>About the Chapter</span></a></nav>`;
   $('#mobile-navigation').innerHTML = NAV.slice(0, 4).map(([id, ic, title]) =>
     `<a href="#${id}" class="${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}${esc(title)}</a>`).join('') +
-    `<button id="mobile-more" class="${NAV.slice(4).some(([id]) => id === state.page) || state.page === 'signup' ? 'active' : ''}" data-action="more-menu" type="button" aria-label="More pages" aria-haspopup="true" aria-expanded="false" aria-controls="m-more-menu">${icon('menu')}More</button>`;
+    `<button id="mobile-more" class="${NAV.slice(4).some(([id]) => id === state.page) || state.page === 'signup' || state.page === 'buddies' ? 'active' : ''}" data-action="more-menu" type="button" aria-label="More pages" aria-haspopup="true" aria-expanded="false" aria-controls="m-more-menu">${icon('menu')}More</button>`;
   // The phone "More" menu (V1's pop-up above the bottom-right corner): the
   // pages that don't fit in the bottom bar, plus help and officer sign-in.
   const moreLink = ([id, ic, title]) => `<a href="#${id}" class="${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}${esc(title)}</a>`;
-  $('#m-more-menu').innerHTML = (signupOpen() ? moreLink(SIGNUP_NAV) : '') + NAV.slice(4).map(moreLink).join('') +
+  $('#m-more-menu').innerHTML = (signupOpen() ? moreLink(SIGNUP_NAV) : '') + (buddyVisible() ? moreLink(BUDDY_NAV) : '') + NAV.slice(4).map(moreLink).join('') +
     `<a href="/about" data-action="about">${icon('about')}About the Chapter</a>` +
     `<span class="m-more-sep" role="separator"></span>` +
     `<button type="button" data-action="officers">${icon('help')}Need help?</button>` +
@@ -1291,6 +1298,102 @@ function renderPrep() {
   </section>`;
 }
 
+// ---------- Buddy System ----------
+// Every member is in one officer's group. A member types their name and the
+// page says who their buddy is; below, every group with its members.
+const fold = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const initialsOf = (n) => String(n || '?').trim().split(/\s+/).map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
+const buddyGroups = () => ((D().buddy || {}).groups || []);
+const firstName = (n) => String(n || '').trim().split(/\s+/)[0];
+// Each group keeps a color, in the order of the chapter's buddy sheet
+// (soft tint for backgrounds, deep shade for initials).
+const BUDDY_COLORS = [
+  ['#dde6f0', '#2f4a6b'], ['#fbefc4', '#7a5a00'], ['#e3dcf2', '#4b3a7a'], ['#f5dbe6', '#8a2f5a'],
+  ['#f2d6cf', '#8a3a28'], ['#d6e7f7', '#1f4f80'], ['#fde4cc', '#8a4b12'], ['#f6d3d3', '#8a2626'],
+  ['#d3e7e9', '#1f5a60'], ['#efe6d2', '#6b5526'], ['#ecd9ef', '#6b2f75'], ['#dcecd5', '#2f5e23'],
+];
+const buddyColor = (g) => { const [tint, ink] = BUDDY_COLORS[((Number(g.id) || 1) - 1) % BUDDY_COLORS.length]; return `--bd-tint:${tint};--bd-ink:${ink}`; };
+// Wrap the part of a name that matches the search in <mark>.
+function markMatch(name, q) {
+  if (!q) return esc(name);
+  const i = fold(name).indexOf(q);
+  // fold() keeps the same length for ordinary names; fall back to no mark if not.
+  if (i < 0 || fold(name).length !== name.length) return esc(name);
+  return `${esc(name.slice(0, i))}<mark>${esc(name.slice(i, i + q.length))}</mark>${esc(name.slice(i + q.length))}`;
+}
+// Before anyone searches: every buddy, in their group's color. Tapping one
+// jumps to that group.
+function buddyTeam() {
+  const gs = buddyGroups();
+  return `<div class="bd-team">
+    <div class="bd-team-faces">${gs.map(g => `<button type="button" class="bd-avatar" style="${buddyColor(g)}" data-action="bd-jump" data-value="${g.id}" title="${esc(g.leader_name)}" aria-label="Go to ${esc(g.leader_name)}'s group">${esc(initialsOf(g.leader_name))}</button>`).join('')}</div>
+    <p>${gs.length} officers, each with a group of their own. Tap one to see who's in it.</p>
+  </div>`;
+}
+function buddyAnswer() {
+  const q = fold(state.buddyQuery);
+  if (q.length < 2) return buddyTeam();
+  const hits = [];
+  buddyGroups().forEach(g => g.members.forEach(m => { if (fold(m).includes(q)) hits.push({ m, g }); }));
+  if (!hits.length) {
+    const leader = buddyGroups().find(g => fold(g.leader_name).includes(q));
+    return leader ? '' : '<p class="bd-note">No member by that name. Check the spelling, or ask an officer.</p>';
+  }
+  if (hits.length > 4) return `<p class="bd-note">${hits.length} members match. Keep typing your last name too.</p>`;
+  return hits.map(({ m, g }) => `
+    <div class="bd-result" style="${buddyColor(g)}">
+      <span class="bd-avatar" aria-hidden="true">${esc(initialsOf(g.leader_name))}</span>
+      <div class="bd-result-copy">
+        <p class="bd-result-for">${esc(m)}, your buddy is</p>
+        <p class="bd-result-name">${esc(g.leader_name)}</p>
+        <p class="bd-result-title">${esc(g.leader_title || 'Officer')}</p>
+      </div>
+      ${g.leader_email ? `<a class="bd-result-mail" href="mailto:${esc(g.leader_email)}">Email ${esc(firstName(g.leader_name))}</a>` : ''}
+    </div>`).join('');
+}
+function buddyCards() {
+  const q = fold(state.buddyQuery);
+  const show = buddyGroups().filter(g => q.length < 2 || fold(g.leader_name).includes(q) || g.members.some(m => fold(m).includes(q)));
+  if (!show.length) return '';
+  return show.map(g => `
+    <article class="bd-card" id="bd-group-${g.id}" style="${buddyColor(g)}">
+      <header class="bd-head">
+        <span class="bd-avatar" aria-hidden="true">${esc(initialsOf(g.leader_name))}</span>
+        <div class="bd-who">
+          <h3>${markMatch(g.leader_name, q.length < 2 ? '' : q)}</h3>
+          <p>${esc(g.leader_title || 'Officer')}</p>
+        </div>
+      </header>
+      ${g.members.length ? `<ul class="bd-members">${g.members.map(m => `<li${q.length >= 2 && fold(m).includes(q) ? ' class="is-hit"' : ''}>${markMatch(m, q.length < 2 ? '' : q)}</li>`).join('')}</ul>` : '<p class="bd-empty">No members in this group yet.</p>'}
+      <footer class="bd-foot">
+        <span>${g.members.length} ${g.members.length === 1 ? 'member' : 'members'}</span>
+        ${g.leader_email ? `<a href="mailto:${esc(g.leader_email)}">Email ${esc(firstName(g.leader_name))}</a>` : ''}
+      </footer>
+    </article>`).join('');
+}
+function renderBuddies() {
+  const top = heading('Buddy System', 'Every member has an officer as their buddy: the person to ask about events, meetings, or anything FBLA.');
+  if (!buddyVisible() || !D().buddy) {
+    return `${top}<section class="m-section-card"><div class="empty-state"><h2>The Buddy System isn't up yet.</h2><p>Officers will post the buddy groups here.</p></div></section>`;
+  }
+  if (!buddyGroups().length) {
+    return `${top}<section class="m-section-card"><div class="empty-state"><h2>Buddy groups are being set up.</h2><p>Check back soon.</p></div></section>`;
+  }
+  return `${top}
+  <section class="bd-find bd" aria-labelledby="bd-find-title">
+    <div class="bd-find-main">
+      <h2 id="bd-find-title">Find your buddy</h2>
+      <p>Type your name to see which officer is yours.</p>
+      <label class="input-wrap">${icon('search')}<input id="bd-search" type="search" placeholder="Your first and last name" autocomplete="off" spellcheck="false" aria-label="Your name" value="${esc(state.buddyQuery || '')}" /></label>
+    </div>
+    <div class="bd-answers" id="bd-answers" aria-live="polite">${buddyAnswer()}</div>
+  </section>
+  <section class="m-section-card bd">
+    <h2 class="bd-groups-title">Buddy groups</h2>
+    <div class="bd-grid" id="bd-grid">${buddyCards()}</div>
+  </section>`;
+}
+
 // ---------- General Resources ----------
 function generalResults() {
   const q = state.generalQuery.trim().toLowerCase();
@@ -1313,7 +1416,7 @@ function render({ focus = false } = {}) {
   const title = PAGE_TITLES[state.page] || 'Home';
   $('#breadcrumb').textContent = title;
   document.title = `${title} · ${chapterName()}`;
-  const pages = { home: renderHome, calendar: renderCalendar, forms: renderForms, updates: renderUpdates, resources: renderResources, prep: renderPrep, general: renderGeneral, 'event-quiz': renderEventQuiz, signup: renderSignup };
+  const pages = { home: renderHome, calendar: renderCalendar, forms: renderForms, updates: renderUpdates, resources: renderResources, prep: renderPrep, general: renderGeneral, 'event-quiz': renderEventQuiz, signup: renderSignup, buddies: renderBuddies };
   const main = $('#main');
   main.innerHTML = (pages[state.page] || renderHome)();
   main.setAttribute('aria-busy', 'false');
@@ -1773,6 +1876,11 @@ document.addEventListener('click', (event) => {
     case 'update': hideHubSearch(); showUpdate(id); break;
     case 'notifications': showNotifications(); break;
     case 'officers': closeMenu(); showOfficers(); break;
+    case 'bd-jump': {
+      const card = document.getElementById(`bd-group-${value}`);
+      if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); card.classList.remove('is-flash'); void card.offsetWidth; card.classList.add('is-flash'); }
+      break;
+    }
     case 'officer-login': closeMenu(); showOfficerLogin(); break;
     case 'about': event.preventDefault(); showAbout(); break;
     case 'open-link': hideHubSearch(); if (/^https?:\/\//i.test(id || '')) window.open(id, '_blank', 'noopener'); break;
@@ -1826,6 +1934,11 @@ document.addEventListener('input', (event) => {
   const t = event.target;
   if (t.id === 'hub-search') updateHubSearch();
   if (t.id === 'resource-search') { state.resourceQuery = t.value; $('#resource-results').innerHTML = resourceResults(); }
+  if (t.id === 'bd-search') {
+    state.buddyQuery = t.value;
+    $('#bd-answers').innerHTML = buddyAnswer();
+    $('#bd-grid').innerHTML = buddyCards() || '<div class="empty-state"><h2>No one by that name.</h2></div>';
+  }
   if (t.id === 'general-search') { state.generalQuery = t.value; $('#general-results').innerHTML = generalResults(); }
   if (t.id === 'prep-search') { state.prepQuery = t.value; $('#prep-results').innerHTML = state.prepTab === 'links' ? linkResults() : prepResults(); }
   if (t.id === 'su-code') { state.signupCodeDraft = t.value; const e = $('#su-code-error'); if (e) e.textContent = ''; }

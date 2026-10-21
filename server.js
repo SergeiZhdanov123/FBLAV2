@@ -425,7 +425,8 @@ app.get('/api/public/hub', ah(async (req, res) => {
   // after the cache expires) shares one database read instead of each doing
   // every collection read again.
   if (!publicCache || Date.now() - publicCache.at > PUBLIC_CACHE_MS) {
-    const pending = db.publicHub();
+    // The Buddy System groups ride along (only while officers have it visible).
+    const pending = Promise.all([db.publicHub(), buddy.publicBuddy()]).then(([hub, b]) => ({ ...hub, buddy: b }));
     publicCache = { at: Date.now(), data: pending };
     pending.catch(() => { if (publicCache && publicCache.data === pending) publicCache = null; });
   }
@@ -982,6 +983,43 @@ app.delete('/api/roster', requireOfficer, sh(async (req, res) => {
   const n = await signup.clearRoster();
   await db.logAudit(req.session.name, 'roster_clear', `Cleared the member list (${n} members)`);
   res.json({ removed: n });
+}));
+
+// ---- Buddy System (buddy.js) ----
+// Officers set up the groups (one per officer) and show or hide the page.
+const buddy = require('./buddy');
+const bh = (fn) => ah(async (req, res, next) => {
+  try { await fn(req, res, next); } catch (e) {
+    if (e instanceof buddy.BuddyError) return res.status(e.status).json({ error: e.message });
+    throw e;
+  }
+});
+app.get('/api/buddy', requireOfficer, bh(async (req, res) => res.json(await buddy.overview())));
+app.patch('/api/buddy/settings', requireOfficer, bh(async (req, res) => {
+  const r = await buddy.setVisible(!!(req.body || {}).visible);
+  await db.logAudit(req.session.name, 'buddy_visibility', r.visible ? 'Buddy System shown on the site' : 'Buddy System hidden from the site');
+  res.json(r);
+}));
+app.post('/api/buddy/groups', requireOfficer, bh(async (req, res) => {
+  const g = await buddy.addGroup((req.body || {}).officer_id, req.session.name);
+  await db.logAudit(req.session.name, 'buddy_group_add', `Buddy group for ${g.leader_name}`);
+  res.json(g);
+}));
+app.delete('/api/buddy/groups/:id', requireOfficer, bh(async (req, res) => {
+  const r = await buddy.deleteGroup(req.params.id);
+  await db.logAudit(req.session.name, 'buddy_group_delete', `Buddy group for ${r.leader_name} (${r.freed} members now need a buddy)`);
+  res.json(r);
+}));
+app.put('/api/buddy/assignments', requireOfficer, bh(async (req, res) => {
+  const b = req.body || {};
+  const r = await buddy.assign(b.roster_ids, b.group_id);
+  await db.logAudit(req.session.name, 'buddy_assign', r.group ? `${r.moved} member${r.moved === 1 ? '' : 's'} to ${r.group.leader_name}'s group` : `${r.moved} member${r.moved === 1 ? '' : 's'} taken out of their buddy group`);
+  res.json({ moved: r.moved });
+}));
+app.post('/api/buddy/assign-rest', requireOfficer, bh(async (req, res) => {
+  const r = await buddy.assignRest();
+  await db.logAudit(req.session.name, 'buddy_assign_rest', `Gave ${r.assigned} members a buddy group`);
+  res.json(r);
 }));
 
 app.delete('/api/google-forms/:id', requireOfficer, ah(async (req, res) => {

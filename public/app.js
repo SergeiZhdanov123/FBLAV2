@@ -505,6 +505,7 @@ async function loadAll() {
   state.calendar = cal; state.googleForms = gf;
   try { state.email = await api('GET', '/api/email/status'); } catch (err) { state.email = null; }
   try { [state.signup, state.roster] = await Promise.all([api('GET', '/api/signup'), api('GET', '/api/roster')]); } catch (err) { state.signup = null; state.roster = []; }
+  try { state.buddy = await api('GET', '/api/buddy'); } catch (err) { state.buddy = null; }
   // Officer accounts are President/Advisor-only; standard officers get a 403.
   state.officers = [];
   if (state.officerRole === 'president' || state.officerRole === 'advisor') {
@@ -523,6 +524,7 @@ function render() {
   renderOfficerPrivateCalendar();
   renderEventSignup();
   renderMemberList();
+  renderBuddy();
   renderOfficerAnnouncements();
   renderOfficerGoogleForms();
   renderOfficerEmail();
@@ -3454,6 +3456,157 @@ window.deleteSignupEntry = async function(id) {
   const x = (state.signup.signups || []).find(s => s.id === id);
   if (!x || !confirm(`Remove this sign-up for ${x.event_name} (${x.people.map(p => p.name).join(', ')})? They will be able to sign up again.`)) return;
   try { await api('DELETE', '/api/signup/entries/' + id); await reloadSignup(); } catch (e) { alert(e.message); }
+};
+
+// ---------------------------- Buddy System ----------------------------
+// Every member on the FBLA Member List goes in one officer's buddy group
+// (buddy.js). Officers show or hide the Buddy System page on the site.
+let buddyFilter = '', buddyShow = 'all';
+async function reloadBuddy() {
+  state.buddy = await api('GET', '/api/buddy');
+  renderBuddy();
+}
+function buddyAllMembers(b) {
+  return [...b.groups.flatMap(g => g.members.map(m => ({ ...m, group_id: g.id }))), ...b.unassigned.map(m => ({ ...m, group_id: null }))]
+    .sort((x, y) => x.last_name.localeCompare(y.last_name) || x.first_name.localeCompare(y.first_name));
+}
+function renderBuddy() {
+  const el = $('#tab-buddy');
+  if (!el) return;
+  const b = state.buddy;
+  if (!b) { el.innerHTML = '<h2>Buddy System</h2><div class="empty">The Buddy System didn\'t load. Refresh the page.</div>'; return; }
+  const assigned = b.roster_count - b.unassigned.length;
+  const free = b.officers.filter(o => !o.has_group);
+  const all = buddyAllMembers(b);
+  const q = buddyFilter.trim().toLowerCase();
+  const rows = all.filter(m => (!q || m.name.toLowerCase().includes(q))
+    && (buddyShow === 'all' || (buddyShow === 'none' ? m.group_id == null : String(m.group_id) === buddyShow)));
+  const groupOptions = (sel) => `<option value="" ${sel == null ? 'selected' : ''}>Needs a buddy</option>` +
+    b.groups.map(g => `<option value="${g.id}" ${sel === g.id ? 'selected' : ''}>${esc(g.leader_name)}</option>`).join('');
+  const card = (g) => `
+    <div class="buddy-admin-card">
+      <div class="bac-head">
+        <strong>${esc(g.leader_name)}</strong>${g.officer_active ? '' : ' <span class="badge unpaid" title="This officer account was removed or turned off">Officer account off</span>'}
+        <div class="muted" style="font-size:12px;">${esc(g.leader_title || 'Officer')} · ${g.members.length} ${g.members.length === 1 ? 'member' : 'members'}</div>
+      </div>
+      ${g.members.length ? `<div class="bac-members">${g.members.map(m => `<span class="bac-chip">${esc(m.name)}<button type="button" title="Take ${esc(m.name)} out of this group" aria-label="Take ${esc(m.name)} out of this group" onclick="buddySetGroup(${m.roster_id}, '')">×</button></span>`).join('')}</div>` : '<div class="muted" style="font-size:13px;">No members yet.</div>'}
+      <div class="bac-actions">
+        <button class="btn small secondary" onclick="openBuddyAddMembers(${g.id})" ${b.unassigned.length ? '' : 'disabled title="Everyone already has a buddy. Use the Members list below to move people."'}>Add members</button>
+        <button class="bac-delete" type="button" onclick="deleteBuddyGroup(${g.id})">Delete group</button>
+      </div>
+    </div>`;
+  el.innerHTML = `
+    <h2>Buddy System</h2>
+    <p class="hint">Every member gets an officer as their buddy. Make a group for each officer, then put every member on the FBLA Member List in one. When it's ready, show it on the site: members can find their name and see who their buddy is.</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Buddy System on the site ${b.visible ? '<span class="badge paid">Visible</span>' : '<span class="badge unpaid">Hidden</span>'}</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${b.visible ? '<a class="btn small secondary" href="/#buddies" target="_blank" rel="noopener">View on the site ↗</a>' : ''}
+          <button class="btn small ${b.visible ? 'secondary' : ''}" onclick="setBuddyVisible(${b.visible ? 'false' : 'true'})">${b.visible ? 'Hide from the site' : 'Show on the site'}</button>
+        </div>
+      </div>
+      <p class="hint" style="margin:0;">${b.roster_count
+        ? `${b.groups.length} ${b.groups.length === 1 ? 'group' : 'groups'}. ${assigned} of ${b.roster_count} members have a buddy${b.unassigned.length ? `, <strong>${b.unassigned.length} still ${b.unassigned.length === 1 ? 'needs' : 'need'} one</strong>` : ''}.`
+        : 'The FBLA Member List is empty. Add the members under <a href="#" onclick="switchTab(\'member-list\');return false;">FBLA Member List</a> first.'}</p>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Buddy groups (${b.groups.length})</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${b.groups.length && b.unassigned.length ? `<button class="btn small secondary" onclick="buddyAssignRest()">Give the ${b.unassigned.length} without a buddy a group</button>` : ''}
+          <button class="btn small" onclick="openBuddyGroupForm()" ${free.length ? '' : 'disabled title="Every officer already has a group"'}>+ New group</button>
+        </div>
+      </div>
+      ${b.groups.length ? `<div class="buddy-admin-grid">${b.groups.map(card).join('')}</div>` : '<div class="empty">No buddy groups yet. Add one for each officer, then add members.</div>'}
+    </div>
+    ${b.roster_count ? `<div class="panel">
+      <div class="panel-head"><h3>Members (${b.roster_count})</h3></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <input id="bd-filter" type="search" placeholder="Search members" value="${esc(buddyFilter)}" oninput="buddyFilter=this.value;renderBuddy();const f=$('#bd-filter');f.focus();f.setSelectionRange(f.value.length,f.value.length);" style="max-width:280px;margin:0;" />
+        <select id="bd-show" onchange="buddyShow=this.value;renderBuddy();" style="max-width:240px;margin:0;">
+          <option value="all" ${buddyShow === 'all' ? 'selected' : ''}>Everyone</option>
+          <option value="none" ${buddyShow === 'none' ? 'selected' : ''}>Needs a buddy (${b.unassigned.length})</option>
+          ${b.groups.map(g => `<option value="${g.id}" ${buddyShow === String(g.id) ? 'selected' : ''}>${esc(g.leader_name)}'s group (${g.members.length})</option>`).join('')}
+        </select>
+      </div>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Name</th><th>Grade</th><th>Buddy group</th></tr></thead>
+        <tbody>${rows.map(m => `<tr>
+          <td>${esc(m.name)}</td><td>${esc(m.grade || '')}</td>
+          <td><select aria-label="Buddy group for ${esc(m.name)}" onchange="buddySetGroup(${m.roster_id}, this.value)" style="margin:0;max-width:240px;${m.group_id == null ? 'color:var(--danger);' : ''}">${groupOptions(m.group_id)}</select></td>
+        </tr>`).join('') || '<tr><td colspan="3" class="muted">No members match.</td></tr>'}</tbody>
+      </table></div>
+    </div>` : ''}`;
+}
+window.setBuddyVisible = async function(visible) {
+  if (visible && !confirm('Show the Buddy System on the site? Anyone with the link will see the buddy groups and members\' names.')) return;
+  try { await api('PATCH', '/api/buddy/settings', { visible }); if (state.config) state.config.buddy_visible = visible; await reloadBuddy(); }
+  catch (e) { alert(e.message); }
+};
+window.openBuddyGroupForm = function() {
+  const free = (state.buddy.officers || []).filter(o => !o.has_group);
+  if (!free.length) { alert('Every officer already has a group.'); return; }
+  showModal('New buddy group', `
+    <div class="form-row"><label>Officer (the buddy)</label>
+      <select id="bg-officer">${free.map(o => `<option value="${o.id}">${esc(o.name)}${o.title ? ` (${esc(o.title)})` : ''}</option>`).join('')}</select>
+    </div>
+    <p class="hint">Each officer leads one group. Add members to it after it's made.</p>
+  `, async () => {
+    await api('POST', '/api/buddy/groups', { officer_id: Number($('#bg-officer').value) });
+    await reloadBuddy();
+    return true;
+  }, 'Make group');
+};
+window.openBuddyAddMembers = function(groupId) {
+  const g = state.buddy.groups.find(x => x.id === groupId);
+  const list = state.buddy.unassigned;
+  if (!g || !list.length) return;
+  showModal(`Add members to ${g.leader_name}'s group`, `
+    <p class="hint" style="margin-top:0;">These ${list.length} members don't have a buddy yet. To move someone who's already in a group, use the Members list.</p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+      <input id="bam-filter" type="search" placeholder="Search" style="max-width:220px;margin:0;" oninput="filterBuddyPicker()" />
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;"><input type="checkbox" id="bam-all" style="width:auto;margin:0;" onchange="toggleBuddyPicker(this.checked)" /> Select everyone shown</label>
+      <span id="bam-count" class="muted" style="font-size:12.5px;margin-left:auto;">0 selected</span>
+    </div>
+    <div class="buddy-picker">${list.map(m => `<label data-name="${esc(m.name.toLowerCase())}"><input type="checkbox" value="${m.roster_id}" onchange="countBuddyPicker()" /> ${esc(m.name)}${m.grade ? ` <span class="muted">· ${esc(m.grade)}th</span>` : ''}</label>`).join('')}</div>
+  `, async () => {
+    const ids = [...$$('.buddy-picker input:checked')].map(i => Number(i.value));
+    if (!ids.length) { alert('Pick at least one member.'); return false; }
+    await api('PUT', '/api/buddy/assignments', { roster_ids: ids, group_id: groupId });
+    await reloadBuddy();
+    return true;
+  }, 'Add to group');
+};
+window.filterBuddyPicker = function() {
+  const q = $('#bam-filter').value.trim().toLowerCase();
+  $$('.buddy-picker label').forEach(l => { l.style.display = !q || l.dataset.name.includes(q) ? '' : 'none'; });
+  $('#bam-all').checked = false;
+};
+window.toggleBuddyPicker = function(on) {
+  $$('.buddy-picker label').forEach(l => { if (l.style.display !== 'none') l.querySelector('input').checked = on; });
+  countBuddyPicker();
+};
+window.countBuddyPicker = function() {
+  const n = $$('.buddy-picker input:checked').length;
+  $('#bam-count').textContent = `${n} selected`;
+};
+window.buddySetGroup = async function(rosterId, groupId) {
+  try {
+    await api('PUT', '/api/buddy/assignments', { roster_ids: [rosterId], group_id: groupId === '' ? null : Number(groupId) });
+    await reloadBuddy();
+  } catch (e) { alert(e.message); await reloadBuddy(); }
+};
+window.buddyAssignRest = async function() {
+  const n = state.buddy.unassigned.length, g = state.buddy.groups.length;
+  if (!confirm(`Give the ${n} ${n === 1 ? 'member' : 'members'} without a buddy a group? They're spread across the ${g} ${g === 1 ? 'group' : 'groups'} so the groups stay about the same size. You can move anyone afterwards.`)) return;
+  try { const r = await api('POST', '/api/buddy/assign-rest'); await reloadBuddy(); alert(`${r.assigned} ${r.assigned === 1 ? 'member' : 'members'} now ${r.assigned === 1 ? 'has' : 'have'} a buddy.`); }
+  catch (e) { alert(e.message); }
+};
+window.deleteBuddyGroup = async function(id) {
+  const g = state.buddy.groups.find(x => x.id === id);
+  if (!g || !confirm(`Delete ${g.leader_name}'s buddy group?${g.members.length ? ` Its ${g.members.length} ${g.members.length === 1 ? 'member' : 'members'} will need a new buddy.` : ''}`)) return;
+  try { await api('DELETE', '/api/buddy/groups/' + id); await reloadBuddy(); } catch (e) { alert(e.message); }
 };
 
 // ---------------------------- FBLA Member List ----------------------------

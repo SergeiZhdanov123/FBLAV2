@@ -411,6 +411,9 @@ async function ensureIndexes() {
     ['signups', { event_id: 1 }, { name: 'signups_by_event' }],
     ['signup_claims', { signup_id: 1 }, { name: 'claims_by_signup' }],
     ['member_roster', { key: 1 }, { name: 'roster_by_key' }],
+    // Buddy System (buddy.js): one group per officer.
+    ['buddy_groups', { officer_id: 1 }, { unique: true, name: 'uniq_buddy_group_officer', partialFilterExpression: { officer_id: { $type: 'number' } } }],
+    ['buddy_assignments', { group_id: 1 }, { name: 'buddy_by_group' }],
   ];
   for (const [coll, keys, opts] of specs) {
     try {
@@ -920,6 +923,7 @@ const BACKUP_COLLECTIONS = Object.freeze([
   'calendar_items', 'officer_calendar_items', 'google_forms',
   'officers', 'counters',
   'signup_events', 'signups', 'signup_claims', 'member_roster',
+  'buddy_groups', 'buddy_assignments',
 ]);
 
 async function backupJson() {
@@ -1598,6 +1602,8 @@ function publicConfig(s) {
     event_quiz_visible: s.event_quiz_visible === '1',
     // Event Sign-Up page: shown on the hub only while officers have it open.
     event_signup_open: s.event_signup_open === '1',
+    // Buddy System page: shown only while officers have it turned on.
+    buddy_visible: s.buddy_visible === '1',
   };
 }
 // Everything the public hub renders, in one read. Each list is reduced to the

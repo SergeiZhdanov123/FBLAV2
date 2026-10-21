@@ -681,3 +681,47 @@ a.lk-row:hover .lk-title{color:var(--m-blue)}
   .lk-go svg{width:16px;height:16px}
 }
 @media(max-width:560px){.page-toolbar .input-wrap{flex-basis:100%;max-width:none}}
+.bd-find{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:28px;align-items:center;padding:28px 30px;border-radius:var(--m-radius);background:var(--m-navy);color:#fff;box-shadow:var(--m-shadow)}
+.bd-find h2{margin:0 0 6px;font-size:22px;letter-spacing:-.01em}
+.bd-find-main>p{margin:0 0 16px;color:#cfdcf2;font-size:13.5px}
+.bd-find .input-wrap{border-color:transparent;background:#fff}
+.bd-find .input-wrap input{padding:13px 0;font-size:15px}
+.bd-answers{display:flex;flex-direction:column;gap:10px}
+.bd-answers:empty{display:none}
+.bd-note{margin:0;color:#cfdcf2;font-size:13.5px}
+.bd-result{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:10px;background:#fff;color:var(--m-ink)}
+.bd-result .bd-avatar{flex-basis:48px;width:48px;height:48px;font-size:15px}
+.bd-result-copy{min-width:0}
+.bd-result-copy p{margin:0}
+.bd-result-for{font-size:12.5px;color:var(--m-muted)}
+.bd-result-name{font-size:17px;font-weight:700;line-height:1.3}
+.bd-result-title{font-size:13px;color:var(--m-muted)}
+.bd-result-mail{margin-left:auto;flex:0 0 auto;padding:8px 12px;border-radius:8px;background:var(--m-navy);color:#fff;font-size:13px;font-weight:600;text-decoration:none}
+.bd-result-mail:hover{background:var(--m-blue)}
+.bd-groups-title{margin:0 0 14px;font-size:16px;font-weight:700;color:var(--m-ink)}
+.bd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:14px}
+.bd-card{display:flex;flex-direction:column;border:1px solid var(--m-line);border-radius:12px;background:#fff;overflow:hidden}
+.bd-head{display:flex;align-items:center;gap:12px;padding:16px 18px;background:color-mix(in srgb,var(--bd-tint,#e8eef8) 55%,#fff);border-bottom:1px solid color-mix(in srgb,var(--bd-tint,#e8eef8) 80%,#cfd8e6)}
+.bd-avatar{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:50%;background:var(--bd-tint,#e8eef8);color:var(--bd-ink,var(--fbla-blue));font-size:14px;font-weight:700;box-shadow:inset 0 0 0 1px rgba(0,0,0,.04)}
+.bd-head .bd-avatar{background:#fff;box-shadow:inset 0 0 0 2px var(--bd-tint,#e8eef8)}
+.bd-who{min-width:0}
+.bd-who h3{margin:0;font-size:16px;font-weight:700;line-height:1.25;color:var(--m-ink)}
+.bd-who p{margin:2px 0 0;font-size:12.5px;color:var(--bd-ink,var(--m-muted))}
+.bd-members{list-style:none;margin:0;padding:12px 18px 14px;columns:2;column-gap:22px}
+.bd-members li{padding:4px 0;font-size:13.5px;line-height:1.45;color:var(--m-ink);break-inside:avoid}
+.bd-members li.is-hit{font-weight:600}
+.bd mark{background:#fde9a6;color:inherit;border-radius:2px;padding:0 1px}
+.bd-empty{margin:0;padding:14px 18px;font-size:13px;color:var(--m-muted)}
+.bd-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:auto;padding:10px 18px;border-top:1px solid var(--m-line);font-size:12.5px;color:var(--m-muted)}
+.bd-foot a{color:var(--m-blue);font-weight:600;text-decoration:none}
+.bd-foot a:hover{text-decoration:underline}
+.bd-find+.m-section-card{margin-top:16px}
+.bd-team p{margin:12px 0 0;color:#cfdcf2;font-size:13px;line-height:1.5;max-width:340px}
+.bd-team-faces{display:flex;flex-wrap:wrap;gap:8px;max-width:300px}
+.bd-team-faces .bd-avatar{border:0;padding:0;cursor:pointer;box-shadow:0 0 0 2px var(--m-navy);transition:transform .15s ease}
+.bd-team-faces .bd-avatar:hover,.bd-team-faces .bd-avatar:focus-visible{transform:translateY(-2px);outline:2px solid #fff;outline-offset:1px}
+.bd-card{scroll-margin-top:18px}
+.bd-card.is-flash{animation:bd-flash 1.4s ease}
+@keyframes bd-flash{0%,30%{box-shadow:0 0 0 3px var(--bd-ink,var(--m-blue))}100%{box-shadow:0 0 0 0 transparent}}
+@media(max-width:900px){.bd-find{grid-template-columns:1fr;gap:16px}}
+@media(max-width:560px){.bd-find{padding:20px}.bd-grid{grid-template-columns:1fr}.bd-find .input-wrap input{font-size:16px}.bd-result{flex-wrap:wrap}.bd-result-mail{margin-left:62px}}
