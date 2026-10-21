@@ -163,7 +163,7 @@ function hydrateIcons(root = document) {
   root.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); el.removeAttribute('data-icon'); });
 }
 function heading(title, description, action = '') {
-  return `<section class="m-page-heading"><div><h1>${title}</h1><p class="m-subhead">${description}</p></div>${action}</section>`;
+  return `<section class="m-page-heading"><div><h1>${title}</h1>${description ? `<p class="m-subhead">${description}</p>` : ''}</div>${action}</section>`;
 }
 function sectionHeading(title, link, label, description = '') {
   return `<div class="m-section-head"><div><h2>${title}</h2>${description ? `<p class="m-subhead">${description}</p>` : ''}</div><a class="m-more-link" href="#${link}">${label} →</a></div>`;
@@ -1327,7 +1327,6 @@ function buddyTeam() {
   const gs = buddyGroups();
   return `<div class="bd-team">
     <div class="bd-team-faces">${gs.map(g => `<button type="button" class="bd-avatar" style="${buddyColor(g)}" data-action="bd-jump" data-value="${g.id}" title="${esc(g.leader_name)}" aria-label="Go to ${esc(g.leader_name)}'s group">${esc(initialsOf(g.leader_name))}</button>`).join('')}</div>
-    <p>${gs.length} officers, each with a group of their own. Tap one to see who's in it.</p>
   </div>`;
 }
 function buddyAnswer() {
@@ -1372,7 +1371,7 @@ function buddyCards() {
     </article>`).join('');
 }
 function renderBuddies() {
-  const top = heading('Buddy System', 'Every member has an officer as their buddy: the person to ask about events, meetings, or anything FBLA.');
+  const top = heading('Buddy System', '');
   if (!buddyVisible() || !D().buddy) {
     return `${top}<section class="m-section-card"><div class="empty-state"><h2>The Buddy System isn't up yet.</h2><p>Officers will post the buddy groups here.</p></div></section>`;
   }
