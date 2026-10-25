@@ -1351,7 +1351,7 @@ function renderEventPage(slug) {
       <section><h3>Going further</h3><p>${esc(ev.beyond)}</p></section>
       <section><h3>Who it's good for</h3><p>${esc(ev.good_for)}</p></section>
       <section><h3>Where it can lead</h3><p>${esc(ev.future)}</p></section>` : `
-      <section><h3>About this event</h3><p>The chapter's member guide doesn't have a page for this event. The official PA guideline above has the rules, the format, and how it's scored; start there and turn every requirement into a checklist.</p></section>`}
+      <section><h3>About this event</h3><p>Will get added soon.</p></section>`}
     </div>
     <aside class="ev-side">
       ${sessions.length ? `<section class="ev-card"><h3>PA FBLA Zoom session</h3><ul class="ev-sessions">${sessions.map(sessionRow).join('')}</ul><p class="ev-small">${sessions.some(l => !linkWhen(l).past) ? 'About 30 minutes with the PA competitive events coordinator. Register first.' : 'This session already happened.'}</p></section>` : ''}
