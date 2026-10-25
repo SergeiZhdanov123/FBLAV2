@@ -797,7 +797,6 @@ a.lk-row:hover .lk-title{color:var(--m-blue)}
 .ev-more li{padding:4px 0;font-size:13.5px}
 .ev-more a{display:inline-flex;align-items:center;gap:4px;color:var(--m-blue);text-decoration:none}
 .ev-more a svg{width:13px;height:13px}
-.ev-source{margin:8px 0 0;padding-top:14px;border-top:1px solid var(--m-line);font-size:12px;color:var(--m-muted);line-height:1.5}
 /* Links tab additions */
 .lk-intro{margin:0 0 10px;font-size:13px;line-height:1.55;color:var(--m-muted);max-width:760px}
 .lk-guide{margin-top:28px}

@@ -1360,8 +1360,7 @@ function renderEventPage(slug) {
       ${signupOpen() ? `<section class="ev-card"><h3>Event Sign-Up</h3><p>${cfg().event_signup_open ? 'Sign-up for competitive events is open.' : 'See who signed up for each event.'}</p><a class="button secondary" href="#signup">Go to Event Sign-Up${icon('arrow')}</a></section>` : ''}
       ${extra.length ? `<section class="ev-card"><h3>More from the chapter</h3><ul class="ev-more">${extra.map(r => `<li>${safeUrl(r.url) ? `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">${esc(r.title)}${icon('external')}</a>` : esc(r.title)}</li>`).join('')}</ul></section>` : ''}
     </aside>
-  </div>
-  <p class="ev-source">From the chapter's 2026-2027 Competitive Events Member Guide. AI can get rules wrong: check its answers against the official guideline, and follow your event's rules on AI use.</p>`;
+  </div>`;
 }
 // Study & Prep has two tabs: study materials (#prep) and links (#prep/links).
 function prepTabFromHash() { return location.hash.slice(1).split('/')[1] === 'links' ? 'links' : 'events'; }
