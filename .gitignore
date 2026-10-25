@@ -11,3 +11,6 @@ render-service-account.txt
 backup-before-*.json
 .dev.vars
 .wrangler/
+
+# Source PDFs dropped in the project folder (their content is built into the site; never publish the files)
+/*.pdf

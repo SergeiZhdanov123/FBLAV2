@@ -323,6 +323,9 @@ async function settingsFlags() {
   const code = String(s.signup_code || '').trim();
   return {
     open: s.event_signup_open === '1', strict: s.signup_one_event_only === '1',
+    // Closed but still on the site: everyone can see the events and who signed
+    // up, but nobody can sign up (createSignup refuses while !open).
+    listed: s.event_signup_open !== '1' && s.event_signup_listed === '1',
     // Officer-only: the public page is told only whether a code is needed.
     code_required: s.signup_code_required === '1' && !!code, code,
   };
@@ -630,10 +633,10 @@ async function setOneEventOnly(strict) {
 function publicSignupState() {
   return cached('state', PUBLIC_STATE_TTL_MS, async () => {
     const { d } = await mdb();
-    const { open, strict, code_required } = await settingsFlags();
+    const { open, listed, strict, code_required } = await settingsFlags();
     const [events, rosterCount] = await Promise.all([listEvents(), d.collection(C.roster).countDocuments({})]);
     return {
-      open, one_event_only: strict, member_list: rosterCount > 0, code_required,
+      open, listed, one_event_only: strict, member_list: rosterCount > 0, code_required,
       events: events.map(e => ({ id: e.id, name: e.name, team: e.team, min_size: e.min_size, max_size: e.max_size, max_entries: e.max_entries, taken: e.taken, chapter: e.chapter, grades: e.grades })),
     };
   });

@@ -3017,7 +3017,7 @@ function renderOfficerResources() {
   const items = (state.slideshows || []).filter(s => s.kind === 'resource');
   el.innerHTML = `
     <h2>Study &amp; Prep Resources</h2>
-    <p class="hint">Add study guides, rubrics, practice tests, and conference prep. Tag a competitive event so visitors searching the hub's Study &amp; Prep page for that event find it.</p>
+    <p class="hint">Add study guides, rubrics, practice tests, and conference prep. Tag a resource with its competitive event and it shows on that event's page in Study &amp; Prep &gt; Events; an event's official PA guideline PDF becomes the main button there. Untagged resources show under "Other study materials".</p>
     <div class="panel">
       <div class="panel-head">
         <h3>Study &amp; Prep Resources</h3>
@@ -3299,10 +3299,15 @@ function renderEventSignup() {
     <p class="hint">Members sign up for competitive events on the site's Event Sign-Up page (no account needed) and add their teammates. Each person can only be signed up once, events can't go over their limit, and once the FBLA Member List has names, only those members can sign up. Everything is saved as it happens.</p>
     <div class="panel">
       <div class="panel-head">
-        <h3>Sign-up on the site ${s.open ? '<span class="badge paid">Open</span>' : '<span class="badge unpaid">Closed</span>'}${s.code_required ? ' <span class="badge">Code required</span>' : ''}</h3>
+        <h3>Sign-up on the site ${s.open ? '<span class="badge paid">Open</span>' : s.listed ? '<span class="badge">Closed, page still up</span>' : '<span class="badge unpaid">Hidden</span>'}${s.code_required ? ' <span class="badge">Code required</span>' : ''}</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <a class="btn small secondary" href="/#signup" target="_blank" rel="noopener">Preview ↗</a>
-          <button class="btn small ${s.open ? 'secondary' : ''}" onclick="setSignupOpen(${s.open ? 'false' : 'true'})" ${!s.open && !s.events.length ? 'disabled title="Add events first"' : ''}>${s.open ? 'Close sign-up' : 'Open sign-up on the site'}</button>
+          ${s.open ? `<button class="btn small secondary" onclick="setSignupState('closed')">Close sign-up, keep the page up</button>
+          <button class="btn small secondary" onclick="setSignupState('hidden')">Close and hide the page</button>`
+          : s.listed ? `<button class="btn small" onclick="setSignupState('open')">Reopen sign-up</button>
+          <button class="btn small secondary" onclick="setSignupState('hidden')">Hide the page</button>`
+          : `<button class="btn small" onclick="setSignupState('open')" ${!s.events.length ? 'disabled title="Add events first"' : ''}>Open sign-up on the site</button>
+          <button class="btn small secondary" onclick="setSignupState('closed')" ${!s.events.length ? 'disabled title="Add events first"' : ''}>Show the page, closed</button>`}
         </div>
       </div>
       <div style="margin:10px 0 8px;">
@@ -3354,11 +3359,19 @@ function renderEventSignup() {
     </div>`;
 }
 
-window.setSignupOpen = async function(open) {
-  if (open && !confirm('Open event sign-up? Members will see the Event Sign-Up page on the site and can sign up right away.')) return;
-  try { await api('PATCH', '/api/signup/settings', { open }); if (state.config) state.config.event_signup_open = open; await reloadSignup(); }
-  catch (e) { alert(e.message); }
+// Open (members sign up), closed (page stays up: everyone sees the events and
+// who signed up, nobody can sign up), or hidden.
+window.setSignupState = async function(to) {
+  if (to === 'open' && !confirm('Open event sign-up? Members will see the Event Sign-Up page on the site and can sign up right away.')) return;
+  if (to === 'closed' && !confirm('Close sign-up but keep the page on the site? Everyone can still see the events and who signed up; nobody can sign up.')) return;
+  const body = to === 'open' ? { open: true } : { open: false, listed: to === 'closed' };
+  try {
+    await api('PATCH', '/api/signup/settings', body);
+    if (state.config) { state.config.event_signup_open = to === 'open'; state.config.event_signup_listed = to === 'closed'; }
+    await reloadSignup();
+  } catch (e) { alert(e.message); }
 };
+window.setSignupOpen = (open) => setSignupState(open ? 'open' : 'hidden');
 window.saveSignupCode = async function() {
   const box = $('#su-code-required'), input = $('#su-code-value');
   const required = !!(box && box.checked), code = input ? input.value.trim() : '';

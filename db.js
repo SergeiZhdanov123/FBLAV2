@@ -1602,6 +1602,8 @@ function publicConfig(s) {
     event_quiz_visible: s.event_quiz_visible === '1',
     // Event Sign-Up page: shown on the hub only while officers have it open.
     event_signup_open: s.event_signup_open === '1',
+    // Closed but still shown (view only): the menu keeps the page.
+    event_signup_listed: s.event_signup_open !== '1' && s.event_signup_listed === '1',
     // Buddy System page: shown only while officers have it turned on.
     buddy_visible: s.buddy_visible === '1',
   };

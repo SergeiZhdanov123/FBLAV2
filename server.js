@@ -845,8 +845,9 @@ app.get('/api/public/signup', sh(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const st = await signup.publicSignupState();
   const officer = !!(req.session && req.session.name && await refreshOfficerSession(req));
-  if (!st.open && !officer) return res.json({ open: false, events: [] });
-  const out = { ...st, preview: !st.open };
+  if (!st.open && !st.listed && !officer) return res.json({ open: false, events: [] });
+  // view_only: closed, but officers left the page up (see who signed up).
+  const out = { ...st, preview: !st.open && !st.listed, view_only: !st.open && !!st.listed };
   // Who signed up for what (names only). When a code is required, only for
   // people who send it (the page passes it in X-Signup-Code); a wrong one
   // counts like any wrong code and tells the page to ask again.
@@ -886,6 +887,11 @@ app.patch('/api/signup/settings', requireOfficer, sh(async (req, res) => {
   if (b.open !== undefined) {
     await db.setSetting('event_signup_open', b.open ? '1' : '0');
     await db.logAudit(req.session.name, 'event_signup_open', b.open ? 'Opened event sign-up on the hub' : 'Closed event sign-up');
+  }
+  // Closed but still visible (true) or hidden (false).
+  if (b.listed !== undefined) {
+    await db.setSetting('event_signup_listed', b.listed ? '1' : '0');
+    if (!b.open) await db.logAudit(req.session.name, 'event_signup_listed', b.listed ? 'Event Sign-Up page stays on the site, closed (view only)' : 'Event Sign-Up page hidden from the site');
   }
   if (b.code_required !== undefined || b.code !== undefined) {
     const r = await signup.setSignupCode({ required: b.code_required, code: b.code });

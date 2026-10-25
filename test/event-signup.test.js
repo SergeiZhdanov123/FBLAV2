@@ -382,3 +382,21 @@ test('db: Study & Prep links: load the PA FBLA Zoom links once, officers add the
   assert.equal((await db.publicHub()).resources.filter(x => x.kind === 'link').length, 25);
   assert.equal((await db.loadStudyLinks('Officer')).added, 0, 'an archived link is not re-added');
 });
+
+test('db: sign-up can be closed but left on the site (view only)', skip, async () => {
+  await db.setSetting('event_signup_open', '0'); await db.setSetting('event_signup_listed', '1');
+  let f = await su.settingsFlags();
+  assert.deepEqual([f.open, f.listed], [false, true]);
+  su.dropCaches();
+  const pub = await su.publicSignupState();
+  assert.deepEqual([pub.open, pub.listed], [false, true]);
+  assert.ok(pub.events.length > 0, 'events still listed');
+  const ev = pub.events.find(e => e.taken < e.max_entries);
+  const e = await err(su.createSignup({ eventId: ev.id, names: ['Kim Knox'] }));
+  assert.equal(e.status, 403, 'nobody can sign up while closed');
+  // Open always wins over "listed"
+  await db.setSetting('event_signup_open', '1');
+  f = await su.settingsFlags();
+  assert.deepEqual([f.open, f.listed], [true, false]);
+  await db.setSetting('event_signup_listed', '0');
+});

@@ -74,7 +74,8 @@ PAGE_TITLES['event-quiz'] = 'Event Quiz'; // linked from Forms; not in the menu
 // Event Sign-Up: in the menu only while officers have it open.
 const SIGNUP_NAV = ['signup', 'check', 'Event Sign-Up'];
 PAGE_TITLES.signup = 'Event Sign-Up';
-const signupOpen = () => !!cfg().event_signup_open;
+// In the menu while sign-up is open, or closed but left up to view.
+const signupOpen = () => !!cfg().event_signup_open || !!cfg().event_signup_listed;
 // Buddy System: in the menu only while officers have it turned on.
 const BUDDY_NAV = ['buddies', 'people', 'Buddy System'];
 PAGE_TITLES.buddies = 'Buddy System';
@@ -858,7 +859,7 @@ function scheduleSignupPoll() {
   clearTimeout(signupPollTimer);
   if (state.page !== 'signup') return;
   const sd = state.signupData;
-  const base = sd && sd.open ? SIGNUP_POLL_OPEN_MS : SIGNUP_POLL_WAITING_MS;
+  const base = sd && (sd.open || sd.view_only) ? SIGNUP_POLL_OPEN_MS : SIGNUP_POLL_WAITING_MS;
   const wait = Math.min(60000, base * 2 ** signupPollFails) + Math.random() * 1000;
   signupPollTimer = setTimeout(pollSignup, wait);
 }
@@ -884,8 +885,8 @@ function applySignupData(next) {
   const prev = state.signupData;
   state.signupData = next;
   syncSignupNav();
-  const shown = (d) => !!d && !d.error && (d.open || d.preview);
-  if (!prev || prev.error || shown(prev) !== shown(next) || !!prev.code_required !== !!next.code_required || prev.one_event_only !== next.one_event_only || prev.member_list !== next.member_list) {
+  const shown = (d) => !!d && !d.error && (d.open || d.preview || d.view_only);
+  if (!prev || prev.error || shown(prev) !== shown(next) || !!prev.view_only !== !!next.view_only || !!prev.code_required !== !!next.code_required || prev.one_event_only !== next.one_event_only || prev.member_list !== next.member_list) {
     // Opened, closed, or recovered from an error: redraw the page.
     render();
     return;
@@ -902,8 +903,9 @@ function applySignupData(next) {
 function syncSignupNav() {
   const cfgNow = (state.data && state.data.config) || null;
   const sd = state.signupData;
-  if (!cfgNow || !sd || sd.error || !!cfgNow.event_signup_open === !!sd.open) return;
+  if (!cfgNow || !sd || sd.error || (!!cfgNow.event_signup_open === !!sd.open && !!cfgNow.event_signup_listed === !!sd.view_only)) return;
   cfgNow.event_signup_open = !!sd.open;
+  cfgNow.event_signup_listed = !!sd.view_only;
   renderNav();
 }
 document.addEventListener('visibilitychange', () => {
@@ -992,15 +994,15 @@ function renderSignup() {
     if (!state.signupLoading) loadSignup();
     return `${heading('Event Sign-Up', 'Sign up for a competitive event.')}<section class="m-section-card"><div class="empty-state"><h2>Loading…</h2></div></section>`;
   }
-  if (!sd.open && !sd.preview) {
+  if (!sd.open && !sd.preview && !sd.view_only) {
     return `${heading('Event Sign-Up', 'Sign up for a competitive event.')}
     <section class="m-section-card"><div class="empty-state"><h2>${sd.error ? "Event sign-up didn't load." : "Event sign-up isn't open right now."}</h2><p>${sd.error ? 'Trying again…' : 'Officers will open it when it is time to choose events. Keep this page open: the events will show up here by themselves, no need to refresh.'}</p></div></section>`;
   }
   if (sd.code_required && !state.signupCodeOk) return renderSignupCode();
-  return `${heading('Event Sign-Up', 'Sign up for a competitive event, and add your teammates if it is a team event.')}
+  return `${heading('Event Sign-Up', sd.view_only ? 'Who signed up for each competitive event.' : 'Sign up for a competitive event, and add your teammates if it is a team event.')}
   <section class="m-section-card su">
     ${sd.preview ? '<p class="quiz-preview-note">Officer preview: sign-up is closed, so members can\'t see this page. Open it in the officer portal (Events > Event Sign-Up).</p>' : ''}
-    <div class="su-info">
+    ${sd.view_only ? '<div class="su-closed"><strong>Sign-up is closed.</strong> You can still see each event and who signed up. To change a sign-up, ask an officer.</div>' : `<div class="su-info">
       <strong>How it works</strong>
       <ul>
         <li>Sign up for <strong>one</strong> individual or team event${sd.one_event_only ? '' : ', plus one chapter project'}.</li>
@@ -1008,7 +1010,7 @@ function renderSignup() {
         <li>Once you're signed up, you can't change it here. Ask an officer.</li>
         ${sd.member_list ? "<li>Use your name as it is on the chapter's FBLA member list. Your first name works if no one else has it.</li>" : ''}
       </ul>
-    </div>
+    </div>`}
     <div class="su-toolbar">
       <label class="input-wrap su-search">${icon('search')}<input id="signup-search" type="search" placeholder="${state.signupData && state.signupData.entries ? 'Search events or names' : 'Search events'}" value="${esc(state.signupQuery || '')}" aria-label="Search events" /></label>
       <div class="su-filters" role="group" aria-label="Show">
@@ -1041,13 +1043,13 @@ function signupResults() {
     return `<li class="su-card is-${status}">
       <div class="su-card-top">
         <strong class="su-name-t">${esc(e.name)}</strong>
-        <span class="su-pill is-${status}">${left === 0 ? 'Full' : `${left} left`}</span>
+        ${left === 0 ? '<span class="su-pill is-full">Full</span>' : sd.open || sd.preview ? `<span class="su-pill is-${status}">${left} left</span>` : ''}
       </div>
       <p class="su-meta">${teamText(e)}${e.grades ? ' · 9th-10th only' : ''}</p>
       ${whoList(e)}
       <div class="su-card-foot">
         <span class="su-count">${e.taken} of ${e.max_entries} ${e.team ? (e.max_entries === 1 ? 'team' : 'teams') : (e.max_entries === 1 ? 'spot' : 'spots')} taken</span>
-        ${left === 0 ? '' : `<button class="button su-btn" type="button" data-action="signup-open" data-id="${e.id}">Sign up</button>`}
+        ${left === 0 || !(sd.open || sd.preview) ? '' : `<button class="button su-btn" type="button" data-action="signup-open" data-id="${e.id}">Sign up</button>`}
       </div>
     </li>`;
   };
@@ -1219,28 +1221,151 @@ function renderResources() {
 // Materials tagged "All Events" (topics lists and other references that cover
 // every event) sit in their own section at the top; each event's own guides
 // follow under "Individual Events". The search box filters both.
-const ALL_EVENTS_TAG = 'all events';
-function prepResults() {
-  const q = state.prepQuery.trim().toLowerCase();
-  const found = (D().resources || []).filter(r => r.kind === 'resource' &&
-    (!q || `${r.title} ${r.description || ''} ${r.competitive_event || ''} ${r.event_name || ''}`.toLowerCase().includes(q)));
-  if (!found.length) {
-    return q
-      ? '<div class="empty-state"><h2>No matching materials.</h2></div>'
-      : '<div class="empty-state"><h2>No study materials yet.</h2></div>';
-  }
-  const isAll = (r) => (r.competitive_event || '').trim().toLowerCase() === ALL_EVENTS_TAG;
-  const all = found.filter(isAll);
-  const each = found.filter(r => !isAll(r));
-  const section = (title, list) => list.length ? `
-    <div class="prep-section">
-      <h2 class="prep-section-title">${title} <span>${list.length}</span></h2>
-      <div class="m-res-grid">${list.map(resourceCard).join('')}</div>
-    </div>` : '';
-  return section('All Events', all) + section('Individual Events', each);
+// ---------- Study & Prep > Events ----------
+// One box per competitive event. The text comes from the chapter's 2026-2027
+// Competitive Events Member Guide (public/event-guide.json, loaded only when
+// someone opens Study & Prep); the official PA PDF for each event is the
+// Study & Prep resource tagged with that event, and its Zoom session comes
+// from the Links tab, so officers keep both up to date as before.
+let eventGuide = null, eventGuideLoading = false;
+function loadEventGuide() {
+  if (eventGuide || eventGuideLoading) return;
+  eventGuideLoading = true;
+  fetch('/event-guide.json?v=2').then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+    .then(g => { eventGuide = g; })
+    .catch(() => { eventGuide = { events: [], failed: true }; })
+    .finally(() => { eventGuideLoading = false; if (state.page === 'prep') render(); });
+}
+const evKey = (t) => fold(t).replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+const EV_KINDS = {
+  test: 'Test', roleplay: 'Role play', present: 'Presentation or project', speech: 'Speech', chapter: 'Chapter project',
+};
+const EV_FILTERS = [['all', 'All events'], ['test', 'Tests'], ['roleplay', 'Role plays'], ['present', 'Presentations and projects'], ['speech', 'Speeches'], ['chapter', 'Chapter projects']];
+const studyResources = () => (D().resources || []).filter(r => r.kind === 'resource');
+// The official PA PDF (and any other chapter materials) tagged with this event.
+function eventMaterials(ev) {
+  const k = evKey(ev.name);
+  return studyResources().filter(r => evKey(r.competitive_event || '') === k || evKey(r.title) === k);
+}
+// Its Zoom session(s), from the Links tab: by name, plus the two sessions that
+// cover a whole format (objective tests; tests with role plays).
+function eventSessions(ev) {
+  const k = evKey(ev.name);
+  return studyLinks().filter(l => /zoom\.us/i.test(l.url || '')).filter(l => {
+    const t = evKey(l.title);
+    if (t === 'objective test only events') return ev.format === 'Objective test';
+    if (t === 'objective tests with role plays') return ev.format === 'Test and role play';
+    return l.title.split('/').map(evKey).some(part => part && (part === k || k.startsWith(part + ' ')));
+  });
+}
+const nextSession = (ev) => eventSessions(ev).find(l => !linkWhen(l).past) || null;
+function eventBox(ev) {
+  const z = nextSession(ev), w = z ? linkWhen(z) : null;
+  return `<a class="ev-box ev-k-${ev.category || 'none'}" href="#prep/event/${esc(ev.slug)}">
+    <span class="ev-format">${esc(ev.format || EV_KINDS[ev.category] || 'Competitive event')}</span>
+    <strong class="ev-name">${esc(ev.name)}</strong>
+    <span class="ev-entry">${esc(ev.entry)}</span>
+    ${w ? `<span class="ev-zoom">${icon('clock')}Zoom session ${esc(w.day)}${w.time ? `, ${esc(w.time)}` : ''}</span>` : ''}
+  </a>`;
+}
+function eventResults() {
+  if (!eventGuide) return '<div class="empty-state"><h2>Loading…</h2></div>';
+  if (eventGuide.failed) return '<div class="empty-state"><h2>The events didn\'t load.</h2><p>Check your connection and refresh the page.</p></div>';
+  const q = evKey(state.prepQuery), f = state.evFilter || 'all';
+  const list = eventGuide.events.filter(e => (f === 'all' || e.category === f) && (!state.evYoung || e.grades_9_10)
+    && (!q || evKey(`${e.name} ${e.format || ''} ${e.focus || ''}`).includes(q)));
+  return list.length ? `<div class="ev-grid">${list.map(eventBox).join('')}</div>` : '<div class="empty-state"><h2>No events match.</h2></div>';
+}
+// Study materials that aren't for one event (e.g. "All Topics for Events").
+function otherMaterials() {
+  if (!eventGuide || !eventGuide.events) return '';
+  const keys = new Set(eventGuide.events.map(e => evKey(e.name)));
+  const rest = studyResources().filter(r => !keys.has(evKey(r.competitive_event || '')) && !keys.has(evKey(r.title)));
+  return rest.length ? `<div class="prep-section ev-other"><h2 class="lk-head">Other study materials</h2><div class="m-res-grid">${rest.map(resourceCard).join('')}</div></div>` : '';
+}
+function eventStartHere() {
+  const g = eventGuide;
+  if (!g || !g.choose) return '';
+  return `<details class="ev-start"${state.evStartOpen ? ' open' : ''}>
+    <summary>New to competitive events? How to pick one and get ready</summary>
+    <div class="ev-start-body">
+      <p class="ev-start-intro">${esc(g.intro)}</p>
+      <div class="ev-start-cols">
+        <section><h3>Choosing an event</h3><ul>${g.choose.map(x => `<li>${esc(x)}</li>`).join('')}</ul></section>
+        <section><h3>A simple prep routine</h3><ul>${g.routine.map(x => `<li>${esc(x)}</li>`).join('')}</ul></section>
+        <section><h3>Before you compete</h3><ul class="ev-checklist">${g.checklist.map(x => `<li>${esc(x)}</li>`).join('')}</ul></section>
+      </div>
+      <p class="ev-start-note">${esc(g.official_rules)}</p>
+    </div>
+  </details>`;
+}
+function renderEvents() {
+  const f = state.evFilter || 'all';
+  return `${eventStartHere()}
+    <div class="ev-toolbar">
+      <label class="input-wrap">${icon('search')}<input id="prep-search" type="search" placeholder="Search events" value="${esc(state.prepQuery)}" aria-label="Search events" /></label>
+      <div class="su-filters" role="group" aria-label="Show">${EV_FILTERS.map(([v, l]) => `<button type="button" class="su-chip ${f === v ? 'is-on' : ''}" data-action="ev-filter" data-value="${v}" aria-pressed="${f === v}">${l}</button>`).join('')}</div>
+      <label class="su-hidefull"><input type="checkbox" id="ev-young" ${state.evYoung ? 'checked' : ''} /> 9th-10th grade events only</label>
+    </div>
+    <div id="prep-results">${eventResults()}</div>
+    ${otherMaterials()}`;
+}
+// One event's page (#prep/event/<slug>).
+const PROMPT_FOR = { test: 'Practice an objective test', roleplay: 'Practice a role play', present: 'Review a presentation', speech: 'Practice a speech', chapter: 'Plan a team project' };
+const evPlanKey = (slug) => `fbla_ev_plan_${slug}`;
+function evPlanDone(slug) { try { return JSON.parse(localStorage.getItem(evPlanKey(slug)) || '[]'); } catch (e) { return []; } }
+function renderEventPage(slug) {
+  if (!eventGuide) return '<div class="empty-state"><h2>Loading…</h2></div>';
+  const ev = (eventGuide.events || []).find(e => e.slug === slug);
+  if (!ev) return `<a class="ev-back" href="#prep">${icon('left')}All events</a><div class="empty-state"><h2>That event isn't here.</h2></div>`;
+  const mats = eventMaterials(ev), pdf = mats.find(r => /\.pdf($|[?#])/i.test(r.url || '')) || mats.find(r => r.url);
+  const extra = mats.filter(r => r !== pdf);
+  const scored = ev.category && ev.category !== 'test';
+  const sessions = eventSessions(ev);
+  const done = evPlanDone(ev.slug);
+  const general = (eventGuide.ai_prompts || []).find(x => x.title === (ev.format === 'Production test' ? 'Prepare for software testing' : PROMPT_FOR[ev.category]));
+  const promptCard = (title, text) => `<div class="ev-prompt">
+      <div class="ev-prompt-head"><h3>${esc(title)}</h3><button type="button" class="ev-copy" data-action="ev-copy">Copy</button></div>
+      <p class="ev-prompt-text">${esc(text)}</p>
+    </div>`;
+  const sessionRow = (l) => { const w = linkWhen(l); return `<li class="${w.past ? 'is-past' : ''}">
+      <span class="ev-sess-when">${esc(w.day)}${w.time ? ` · ${esc(w.time)}` : ''}</span>
+      ${evKey(l.title) === evKey(ev.name) ? '' : `<span class="ev-sess-title">${esc(l.title)}</span>`}
+      ${safeUrl(l.url) ? `<a href="${safeUrl(l.url)}" target="_blank" rel="noopener">${w.past ? 'Session page' : 'Register'}${icon('external')}</a>` : ''}
+    </li>`; };
+  return `<a class="ev-back" href="#prep">${icon('left')}All events</a>
+  <header class="ev-hero ev-k-${ev.category || 'none'}">
+    <p class="ev-format">${esc(ev.format || EV_KINDS[ev.category] || 'Competitive event')}</p>
+    <h2>${esc(ev.name)}</h2>
+    <p class="ev-entry">${esc(ev.entry)}</p>
+    <div class="ev-actions">
+      ${pdf ? `<a class="button" href="${safeUrl(pdf.url)}" target="_blank" rel="noopener">${icon('file')}${!ev.category ? 'Official guideline' : scored ? 'Official guideline and rubric' : 'Official guideline and topics'} (PDF)</a>` : '<span class="ev-nopdf">The official PA guideline for this event isn\'t posted here yet. Check pafbla.org.</span>'}
+      <a class="button secondary" href="https://www.fbla.org/hs-ce-26-27/" target="_blank" rel="noopener">National FBLA guidelines${icon('external')}</a>
+    </div>
+  </header>
+  <div class="ev-layout">
+    <div class="ev-main">
+      ${ev.in_guide ? `
+      <section><h3>What to focus on</h3><p>${esc(ev.focus)}</p></section>
+      <section><h3>Prep plan</h3><ul class="ev-plan">${ev.plan.map((x, i) => `<li><label><input type="checkbox" class="ev-plan-box" data-slug="${esc(ev.slug)}" data-i="${i}" ${done.includes(i) ? 'checked' : ''} /><span>${esc(x)}</span></label></li>`).join('')}</ul><p class="ev-small">Your ticks are saved on this device.</p></section>
+      <section><h3>Going further</h3><p>${esc(ev.beyond)}</p></section>
+      <section><h3>Who it's good for</h3><p>${esc(ev.good_for)}</p></section>
+      <section><h3>Where it can lead</h3><p>${esc(ev.future)}</p></section>` : `
+      <section><h3>About this event</h3><p>The chapter's member guide doesn't have a page for this event. The official PA guideline above has the rules, the format, and how it's scored; start there and turn every requirement into a checklist.</p></section>`}
+    </div>
+    <aside class="ev-side">
+      ${sessions.length ? `<section class="ev-card"><h3>PA FBLA Zoom session</h3><ul class="ev-sessions">${sessions.map(sessionRow).join('')}</ul><p class="ev-small">${sessions.some(l => !linkWhen(l).past) ? 'About 30 minutes with the PA competitive events coordinator. Register first.' : 'This session already happened.'}</p></section>` : ''}
+      ${ev.prompt ? promptCard('AI practice prompt', ev.prompt) : ''}
+      ${general ? promptCard(general.title, general.prompt.replace(/\[EVENT\]/g, ev.name)) : ''}
+      ${signupOpen() ? `<section class="ev-card"><h3>Event Sign-Up</h3><p>${cfg().event_signup_open ? 'Sign-up for competitive events is open.' : 'See who signed up for each event.'}</p><a class="button secondary" href="#signup">Go to Event Sign-Up${icon('arrow')}</a></section>` : ''}
+      ${extra.length ? `<section class="ev-card"><h3>More from the chapter</h3><ul class="ev-more">${extra.map(r => `<li>${safeUrl(r.url) ? `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">${esc(r.title)}${icon('external')}</a>` : esc(r.title)}</li>`).join('')}</ul></section>` : ''}
+    </aside>
+  </div>
+  <p class="ev-source">From the chapter's 2026-2027 Competitive Events Member Guide. AI can get rules wrong: check its answers against the official guideline, and follow your event's rules on AI use.</p>`;
 }
 // Study & Prep has two tabs: study materials (#prep) and links (#prep/links).
-function prepTabFromHash() { return location.hash.slice(1).split('/')[1] === 'links' ? 'links' : 'materials'; }
+function prepTabFromHash() { return location.hash.slice(1).split('/')[1] === 'links' ? 'links' : 'events'; }
+function prepEventFromHash() { const p = location.hash.slice(1).split('/'); return p[1] === 'event' && p[2] ? decodeURIComponent(p[2]) : null; }
 const studyLinks = () => (D().resources || []).filter(r => r.kind === 'link').sort((a, b) => a.id - b.id);
 // A link's details can start with when it happens ("Oct 5 · 7:45 PM · ...").
 // That date goes in its own column, and sessions that are over move to a
@@ -1254,7 +1379,10 @@ function linkWhen(r) {
   const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1; // school year starts in the summer
   const date = new Date(mon >= 7 ? start : start + 1, mon, Number(m[2]));
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return { day: `${m[1].slice(0, 3)} ${m[2]}`, time: (m[3] || '').toUpperCase().replace(/\./g, ''), note: m[4] || '', past: date < today };
+  // The first version of the built-in Zoom links repeated this on every row;
+  // the group note says it once now.
+  const note = (m[4] || '').replace(/^About 30 minutes, only this event is covered\. Register first\.$/, '');
+  return { day: `${m[1].slice(0, 3)} ${m[2]}`, time: (m[3] || '').toUpperCase().replace(/\./g, ''), note, past: date < today };
 }
 function linkRow(r) {
   const href = safeUrl(r.url), w = linkWhen(r);
@@ -1264,6 +1392,21 @@ function linkRow(r) {
     <span class="lk-text"><span class="lk-title">${esc(r.title)}</span>${w.note ? `<span class="lk-note">${esc(w.note)}</span>` : ''}</span>
     ${href ? `<span class="lk-go">${label}${icon('external')}</span>` : ''}`;
   return `<li>${href ? `<a class="lk-row${w.day ? '' : ' no-when'}" href="${href}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>` : `<div class="lk-row${w.day ? '' : ' no-when'}">${inner}</div>`}</li>`;
+}
+// The member guide's study resources and the chapter's KlutchPrep code.
+function guideResources() {
+  const g = eventGuide;
+  if (!g || !g.resources) return '';
+  const q = evKey(state.prepQuery);
+  const list = g.resources.filter(r => !q || evKey(`${r.title} ${r.description}`).includes(q));
+  if (!list.length && q) return '';
+  return `<section class="lk-group lk-guide">
+    <h2 class="lk-head">Study resources</h2>
+    ${g.klutchprep ? `<div class="lk-code"><div><strong>KlutchPrep chapter code</strong><span>${esc(g.klutchprep.note)}</span></div><code>${esc(g.klutchprep.code)}</code></div>` : ''}
+    <ul class="lk-list">${list.map(r => `<li><a class="lk-row no-when" href="${safeUrl(r.url)}" target="_blank" rel="noopener">
+      <span class="lk-text"><span class="lk-title">${esc(r.title)}</span><span class="lk-note">${esc(r.description)}</span></span>
+      <span class="lk-go">Open${icon('external')}</span><span class="sr-only"> (opens in a new tab)</span></a></li>`).join('')}</ul>
+  </section>`;
 }
 function linkResults() {
   const q = state.prepQuery.trim().toLowerCase();
@@ -1279,6 +1422,7 @@ function linkResults() {
     return `
     <section class="lk-group">
       <h2 class="lk-head">${esc(g)}</h2>
+      ${/zoom sessions/i.test(g) ? '<p class="lk-intro">Hosted by Derek Selleck, PA FBLA Competitive Events Coordinator. Open to advisers and students, about 30 minutes each, and each one covers only the events listed. Pre-registration is required, so register for the session you want.</p>' : ''}
       ${upcoming.length ? `<ul class="lk-list">${upcoming.map(linkRow).join('')}</ul>` : '<p class="lk-none">Nothing coming up.</p>'}
       ${past.length ? `<details class="lk-past"${q && !upcoming.length ? ' open' : ''}><summary>Past sessions (${past.length})</summary><ul class="lk-list">${past.map(linkRow).join('')}</ul></details>` : ''}
     </section>`;
@@ -1286,15 +1430,18 @@ function linkResults() {
 }
 function renderPrep() {
   const links = state.prepTab === 'links';
-  return `${heading('Study &amp; Prep', 'Competitive-event guides, conference prep, and chapter study materials.')}
+  loadEventGuide();
+  const head = heading('Study &amp; Prep', '');
+  if (!links && state.prepEvent) return `${head}<section class="m-section-card ev-page">${renderEventPage(state.prepEvent)}</section>`;
+  return `${head}
   <section class="m-section-card">
     ${quizVisible() ? '<p class="quiz-pointer">Not sure which event to pick? <a href="#event-quiz">Take the Event Recommendation Quiz →</a></p>' : ''}
     <div class="prep-tabs" role="navigation" aria-label="Study & Prep">
-      <a href="#prep" class="prep-tab ${links ? '' : 'is-on'}" ${links ? '' : 'aria-current="page"'}>Study materials</a>
+      <a href="#prep" class="prep-tab ${links ? '' : 'is-on'}" ${links ? '' : 'aria-current="page"'}>Events</a>
       <a href="#prep/links" class="prep-tab ${links ? 'is-on' : ''}" ${links ? 'aria-current="page"' : ''}>Links</a>
     </div>
-    <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="prep-search" type="search" placeholder="${links ? 'Search links, e.g. an event name' : 'Search study materials, e.g. an event name'}" value="${esc(state.prepQuery)}" aria-label="${links ? 'Search links' : 'Search study materials'}" /></label></div>
-    <div id="prep-results">${links ? linkResults() : prepResults()}</div>
+    ${links ? `<div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="prep-search" type="search" placeholder="Search links, e.g. an event name" value="${esc(state.prepQuery)}" aria-label="Search links" /></label></div>
+    <div id="prep-results">${linkResults()}</div>${guideResources()}` : renderEvents()}
   </section>`;
 }
 
@@ -1435,6 +1582,7 @@ function route() {
   const tab = prepTabFromHash();
   if (tab !== state.prepTab) state.prepQuery = ''; // each Study & Prep tab starts with an empty search
   state.prepTab = tab;
+  state.prepEvent = prepEventFromHash();
   if (state.page === 'signup') loadSignup();
   hideHubSearch();
   closeMenu();
@@ -1842,6 +1990,9 @@ function refreshAboutGalleries() {
 }
 
 // ---------- events ----------
+document.addEventListener('toggle', (event) => {
+  if (event.target.classList && event.target.classList.contains('ev-start')) state.evStartOpen = event.target.open;
+}, true);
 document.addEventListener('click', (event) => {
   if (event.target.closest('.skip-link')) { event.preventDefault(); $('#main').focus(); return; }
   if (!event.target.closest('.m-search') && !event.target.closest('#hub-search-results')) hideHubSearch();
@@ -1875,6 +2026,18 @@ document.addEventListener('click', (event) => {
     case 'update': hideHubSearch(); showUpdate(id); break;
     case 'notifications': showNotifications(); break;
     case 'officers': closeMenu(); showOfficers(); break;
+    case 'ev-filter':
+      state.evFilter = value;
+      document.querySelectorAll('[data-action="ev-filter"]').forEach(c => { const on = c.dataset.value === value; c.classList.toggle('is-on', on); c.setAttribute('aria-pressed', String(on)); });
+      $('#prep-results').innerHTML = eventResults();
+      break;
+    case 'ev-copy': {
+      const text = button.closest('.ev-prompt').querySelector('.ev-prompt-text').textContent;
+      const done = () => { button.textContent = 'Copied'; setTimeout(() => { button.textContent = 'Copy'; }, 1600); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, () => toast('Select the prompt and copy it.'));
+      else toast('Select the prompt and copy it.');
+      break;
+    }
     case 'bd-jump': {
       const card = document.getElementById(`bd-group-${value}`);
       if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); card.classList.remove('is-flash'); void card.offsetWidth; card.classList.add('is-flash'); }
@@ -1939,7 +2102,7 @@ document.addEventListener('input', (event) => {
     $('#bd-grid').innerHTML = buddyCards() || '<div class="empty-state"><h2>No one by that name.</h2></div>';
   }
   if (t.id === 'general-search') { state.generalQuery = t.value; $('#general-results').innerHTML = generalResults(); }
-  if (t.id === 'prep-search') { state.prepQuery = t.value; $('#prep-results').innerHTML = state.prepTab === 'links' ? linkResults() : prepResults(); }
+  if (t.id === 'prep-search') { state.prepQuery = t.value; $('#prep-results').innerHTML = state.prepTab === 'links' ? linkResults() : eventResults(); }
   if (t.id === 'su-code') { state.signupCodeDraft = t.value; const e = $('#su-code-error'); if (e) e.textContent = ''; }
   if (t.id === 'signup-search') { state.signupQuery = t.value; $('#signup-results').innerHTML = signupResults(); }
   // Editing a name clears its old check result.
@@ -1955,6 +2118,13 @@ document.addEventListener('focusout', (event) => {
 });
 document.addEventListener('change', (event) => {
   const t = event.target;
+  if (t.id === 'ev-young') { state.evYoung = t.checked; $('#prep-results').innerHTML = eventResults(); return; }
+  if (t.classList && t.classList.contains('ev-plan-box')) {
+    const slug = t.dataset.slug, i = Number(t.dataset.i);
+    const done = new Set(evPlanDone(slug)); if (t.checked) done.add(i); else done.delete(i);
+    try { localStorage.setItem(evPlanKey(slug), JSON.stringify([...done])); } catch (e) { /* private mode */ }
+    return;
+  }
   if (t.id === 'signup-hidefull') { state.signupHideFull = t.checked; $('#signup-results').innerHTML = signupResults(); return; }
   if (t.matches && t.matches('.quiz-q input[type="radio"]')) {
     const qs = quizState();
@@ -2018,6 +2188,7 @@ updateOnlineStatus();
 closeMenu();
 state.page = PAGE_TITLES[location.hash.slice(1).split('/')[0]] ? location.hash.slice(1).split('/')[0] : 'home';
 state.prepTab = prepTabFromHash();
+state.prepEvent = prepEventFromHash();
 renderNav();
 if (ABOUT_PATHS.includes(location.pathname)) showAbout(false);
 load();
