@@ -1295,7 +1295,6 @@ function eventStartHere() {
         <section><h3>A simple prep routine</h3><ul>${g.routine.map(x => `<li>${esc(x)}</li>`).join('')}</ul></section>
         <section><h3>Before you compete</h3><ul class="ev-checklist">${g.checklist.map(x => `<li>${esc(x)}</li>`).join('')}</ul></section>
       </div>
-      <p class="ev-start-note">${esc(g.official_rules)}</p>
     </div>
   </details>`;
 }
