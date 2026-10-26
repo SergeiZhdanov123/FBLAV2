@@ -400,3 +400,20 @@ test('db: sign-up can be closed but left on the site (view only)', skip, async (
   assert.deepEqual([f.open, f.listed], [true, false]);
   await db.setSetting('event_signup_listed', '0');
 });
+
+test('db: a session link can carry its recording (link + passcode)', skip, async () => {
+  const l = await db.addSlideshow({ kind: 'link', title: 'Rec Test Session', url: 'https://us02web.zoom.us/meeting/register/abc', description: 'Oct 5 · 7:45 PM', competitive_event: 'Rec Test' }, 'Officer');
+  let s = await db.setSlideshowRecording(l.id, { recording_url: 'https://us02web.zoom.us/rec/share/xyz', recording_passcode: '  4h&Xw2!q ' });
+  assert.deepEqual([s.recording_url, s.recording_passcode], ['https://us02web.zoom.us/rec/share/xyz', '4h&Xw2!q']);
+  let pub = (await db.publicHub()).resources.find(r => r.id === l.id);
+  assert.deepEqual([pub.recording_url, pub.recording_passcode], ['https://us02web.zoom.us/rec/share/xyz', '4h&Xw2!q']);
+  await assert.rejects(db.setSlideshowRecording(l.id, { recording_url: 'javascript:alert(1)' }), /http/);
+  // Removing the link drops the passcode too
+  s = await db.setSlideshowRecording(l.id, { recording_url: '', recording_passcode: 'leftover' });
+  assert.deepEqual([s.recording_url, s.recording_passcode], [null, null]);
+  // Only links take recordings
+  const r = await db.addSlideshow({ kind: 'resource', title: 'Not a link', url: 'https://example.org/a.pdf' }, 'Officer');
+  await assert.rejects(db.setSlideshowRecording(r.id, { recording_url: 'https://example.org/v' }), /only be added to links/);
+  pub = (await db.publicHub()).resources.find(x => x.id === r.id);
+  assert.equal(pub.recording_url, null);
+});

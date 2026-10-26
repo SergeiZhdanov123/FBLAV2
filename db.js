@@ -1038,6 +1038,20 @@ async function loadStudyLinks(userName) {
   }
   return { added, already: defaults.length - added, total: defaults.length };
 }
+// Study & Prep > Links: the recording of a session that already happened (the
+// link and passcode the host sends out afterwards, e.g. PA FBLA's email to
+// registrants). The site switches the session to "Watch recording" once it's
+// over. An empty link removes the recording.
+async function setSlideshowRecording(id, data) {
+  await init();
+  const cur = await getDoc('slideshows', id);
+  if (!cur) throw new Error('That link is gone. Refresh the page.');
+  if (cur.kind !== 'link') throw new Error('Recordings can only be added to links.');
+  const url = normalizeResourceUrl(data.recording_url);
+  const passcode = url ? (String(data.recording_passcode || '').trim().slice(0, 80) || null) : null;
+  await docRef('slideshows', Number(id)).update({ recording_url: url, recording_passcode: passcode });
+  return getDoc('slideshows', id);
+}
 async function setSlideshowArchived(id, archived) {
   await init();
   await docRef('slideshows', Number(id)).update({ archived: archived ? 1 : 0 });
@@ -1634,6 +1648,8 @@ async function publicHub() {
     })),
     resources: resources.map(r => ({
       id: r.id, kind: r.kind, title: r.title, url: r.url, description: r.description || null,
+      recording_url: r.kind === 'link' ? r.recording_url || null : null,
+      recording_passcode: r.kind === 'link' && r.recording_url ? r.recording_passcode || null : null,
       event_id: r.event_id, event_name: r.event_name, competitive_event: r.competitive_event || null,
       has_cover: r.has_cover, cover_v: r.cover_v,
       created_at: r.created_at,
@@ -1685,7 +1701,7 @@ module.exports = {
   listDepositSlips, getDepositSlip, createDepositSlip, deleteDepositSlip, markDepositSubmitted,
   listPurchaseOrders, getPurchaseOrder, createPurchaseOrder, deletePurchaseOrder, markPOSubmitted,
   backupJson,
-  listSlideshows, addSlideshow, loadStudyLinks, deleteSlideshow, setSlideshowArchived, markSlideshowReviewed,
+  listSlideshows, addSlideshow, loadStudyLinks, deleteSlideshow, setSlideshowArchived, setSlideshowRecording, markSlideshowReviewed,
   setResourceCover, removeResourceCover, getResourceCover,
   publicHub, publicConfig, competitiveEvents, DEFAULT_COMPETITIVE_EVENTS, systemStats,
 };

@@ -722,6 +722,15 @@ app.patch('/api/slideshows/:id/archived', requireOfficer, ah(async (req, res) =>
   await db.logAudit(req.session.name, 'slideshow_archive', `id=${req.params.id} archived=${!!req.body.archived}`);
   res.json(s);
 }));
+// A session's recording (Study & Prep > Links): link + passcode, or empty to remove.
+app.patch('/api/slideshows/:id/recording', requireOfficer, ah(async (req, res) => {
+  try {
+    const b = req.body || {};
+    const s = await db.setSlideshowRecording(req.params.id, { recording_url: b.recording_url, recording_passcode: b.recording_passcode });
+    await db.logAudit(req.session.name, 'link_recording', s.recording_url ? `Recording added: ${s.title}` : `Recording removed: ${s.title}`);
+    res.json(s);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+}));
 app.patch('/api/slideshows/:id/reviewed', requireOfficer, ah(async (req, res) => {
   const s = await db.markSlideshowReviewed(req.params.id);
   await db.logAudit(req.session.name, 'slideshow_reviewed', `id=${req.params.id}`);

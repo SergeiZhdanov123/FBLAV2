@@ -1265,7 +1265,8 @@ function eventBox(ev) {
     <span class="ev-format">${esc(ev.format || EV_KINDS[ev.category] || 'Competitive event')}</span>
     <strong class="ev-name">${esc(ev.name)}</strong>
     <span class="ev-entry">${esc(ev.entry)}</span>
-    ${w ? `<span class="ev-zoom">${icon('clock')}Zoom session ${esc(w.day)}${w.time ? `, ${esc(w.time)}` : ''}</span>` : ''}
+    ${w ? `<span class="ev-zoom">${icon('clock')}Zoom session ${esc(w.day)}${w.time ? `, ${esc(w.time)}` : ''}</span>`
+      : eventSessions(ev).some(l => safeUrl(l.recording_url)) ? `<span class="ev-zoom">${icon('slides')}Zoom recording available</span>` : ''}
   </a>`;
 }
 function eventResults() {
@@ -1330,7 +1331,9 @@ function renderEventPage(slug) {
   const sessionRow = (l) => { const w = linkWhen(l); return `<li class="${w.past ? 'is-past' : ''}">
       <span class="ev-sess-when">${esc(w.day)}${w.time ? ` · ${esc(w.time)}` : ''}</span>
       ${evKey(l.title) === evKey(ev.name) ? '' : `<span class="ev-sess-title">${esc(l.title)}</span>`}
-      ${safeUrl(l.url) ? `<a href="${safeUrl(l.url)}" target="_blank" rel="noopener">${w.past ? 'Session page' : 'Register'}${icon('external')}</a>` : ''}
+      ${w.past && safeUrl(l.recording_url) ? `<a href="${safeUrl(l.recording_url)}" target="_blank" rel="noopener">Watch recording${icon('external')}</a>${passcodeLine(l.recording_passcode)}`
+        : w.past ? '<span class="ev-sess-wait">Recording not posted yet</span>'
+        : safeUrl(l.url) ? `<a href="${safeUrl(l.url)}" target="_blank" rel="noopener">Register${icon('external')}</a>` : ''}
     </li>`; };
   return `<a class="ev-back" href="#prep">${icon('left')}All events</a>
   <header class="ev-hero ev-k-${ev.category || 'none'}">
@@ -1353,7 +1356,7 @@ function renderEventPage(slug) {
       <section><h3>About this event</h3><p>Will get added soon.</p></section>`}
     </div>
     <aside class="ev-side">
-      ${sessions.length ? `<section class="ev-card"><h3>PA FBLA Zoom session</h3><ul class="ev-sessions">${sessions.map(sessionRow).join('')}</ul><p class="ev-small">${sessions.some(l => !linkWhen(l).past) ? 'About 30 minutes with the PA competitive events coordinator. Register first.' : 'This session already happened.'}</p></section>` : ''}
+      ${sessions.length ? `<section class="ev-card"><h3>PA FBLA Zoom session</h3><ul class="ev-sessions">${sessions.map(sessionRow).join('')}</ul><p class="ev-small">${sessions.some(l => !linkWhen(l).past) ? 'About 30 minutes with the PA competitive events coordinator. Register first.' : sessions.some(l => safeUrl(l.recording_url)) ? 'This session already happened. Watch the recording with the passcode.' : 'This session already happened. The recording shows here once it\'s posted.'}</p></section>` : ''}
       ${ev.prompt ? promptCard('AI practice prompt', ev.prompt) : ''}
       ${general ? promptCard(general.title, general.prompt.replace(/\[EVENT\]/g, ev.name)) : ''}
       ${signupOpen() ? `<section class="ev-card"><h3>Event Sign-Up</h3><p>${cfg().event_signup_open ? 'Sign-up for competitive events is open.' : 'See who signed up for each event.'}</p><a class="button secondary" href="#signup">Go to Event Sign-Up${icon('arrow')}</a></section>` : ''}
@@ -1377,19 +1380,44 @@ function linkWhen(r) {
   const start = now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1; // school year starts in the summer
   const date = new Date(mon >= 7 ? start : start + 1, mon, Number(m[2]));
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Over an hour after it starts (sessions run about 30 minutes); with no
+  // time given, over once the day has passed.
+  let over = date < today;
+  const t = m[3] && /^(\d{1,2})(?::(\d{2}))?\s*([AaPp])/.exec(m[3]);
+  if (t) {
+    const h = (Number(t[1]) % 12) + (/p/i.test(t[3]) ? 12 : 0);
+    const startsAt = new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, Number(t[2] || 0));
+    over = now.getTime() > startsAt.getTime() + 60 * 60 * 1000;
+  }
   // The first version of the built-in Zoom links repeated this on every row;
   // the group note says it once now.
   const note = (m[4] || '').replace(/^About 30 minutes, only this event is covered\. Register first\.$/, '');
-  return { day: `${m[1].slice(0, 3)} ${m[2]}`, time: (m[3] || '').toUpperCase().replace(/\./g, ''), note, past: date < today };
+  return { day: `${m[1].slice(0, 3)} ${m[2]}`, time: (m[3] || '').toUpperCase().replace(/\./g, ''), note, past: over };
+}
+function passcodeLine(code) {
+  return code ? `<span class="lk-pass">Passcode <code>${esc(code)}</code><button type="button" class="lk-copy" data-action="copy-text" data-value="${esc(code)}">Copy</button></span>` : '';
 }
 function linkRow(r) {
-  const href = safeUrl(r.url), w = linkWhen(r);
+  const href = safeUrl(r.url), w = linkWhen(r), rec = safeUrl(r.recording_url);
+  const when = w.day ? `<span class="lk-when"><span>${esc(w.day)}</span>${w.time ? `<span class="lk-time">${esc(w.time)}</span>` : ''}</span>` : '';
+  const cls = `lk-row${w.day ? '' : ' no-when'}`;
+  // Over, with a recording: watch it (the passcode sits outside the link so it can be copied).
+  if (w.past && rec) {
+    return `<li><div class="${cls} has-rec">${when}
+      <span class="lk-text"><span class="lk-title">${esc(r.title)}</span>${w.note ? `<span class="lk-note">${esc(w.note)}</span>` : ''}${passcodeLine(r.recording_passcode)}</span>
+      <a class="lk-go" href="${rec}" target="_blank" rel="noopener">Watch recording${icon('external')}<span class="sr-only"> (opens in a new tab)</span></a></div></li>`;
+  }
+  // Over, no recording yet: registration is pointless now.
+  if (w.past && /zoom\.us\/meeting\/register/i.test(r.url || '')) {
+    return `<li><div class="${cls}">${when}
+      <span class="lk-text"><span class="lk-title">${esc(r.title)}</span>${w.note ? `<span class="lk-note">${esc(w.note)}</span>` : ''}</span>
+      <span class="lk-go lk-wait">No recording yet</span></div></li>`;
+  }
   const label = /zoom\.us\/meeting\/register|\/register/i.test(r.url || '') ? 'Register' : 'Open';
-  const inner = `
-    ${w.day ? `<span class="lk-when"><span>${esc(w.day)}</span>${w.time ? `<span class="lk-time">${esc(w.time)}</span>` : ''}</span>` : ''}
+  const inner = `${when}
     <span class="lk-text"><span class="lk-title">${esc(r.title)}</span>${w.note ? `<span class="lk-note">${esc(w.note)}</span>` : ''}</span>
     ${href ? `<span class="lk-go">${label}${icon('external')}</span>` : ''}`;
-  return `<li>${href ? `<a class="lk-row${w.day ? '' : ' no-when'}" href="${href}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>` : `<div class="lk-row${w.day ? '' : ' no-when'}">${inner}</div>`}</li>`;
+  return `<li>${href ? `<a class="${cls}" href="${href}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>` : `<div class="${cls}">${inner}</div>`}</li>`;
 }
 // The member guide's study resources and the chapter's KlutchPrep code.
 function guideResources() {
@@ -1416,13 +1444,16 @@ function linkResults() {
   const groups = new Map();
   found.forEach(r => { const g = (r.competitive_event || '').trim() || 'Links'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(r); });
   return [...groups].map(([g, list]) => {
-    const upcoming = list.filter(r => !linkWhen(r).past), past = list.filter(r => linkWhen(r).past);
+    const upcoming = list.filter(r => !linkWhen(r).past);
+    const recorded = list.filter(r => linkWhen(r).past && safeUrl(r.recording_url));
+    const past = list.filter(r => linkWhen(r).past && !safeUrl(r.recording_url));
     return `
     <section class="lk-group">
       <h2 class="lk-head">${esc(g)}</h2>
       ${/zoom sessions/i.test(g) ? '<p class="lk-intro">Hosted by Derek Selleck, PA FBLA Competitive Events Coordinator. Open to advisers and students, about 30 minutes each, and each one covers only the events listed. Pre-registration is required, so register for the session you want.</p>' : ''}
       ${upcoming.length ? `<ul class="lk-list">${upcoming.map(linkRow).join('')}</ul>` : '<p class="lk-none">Nothing coming up.</p>'}
-      ${past.length ? `<details class="lk-past"${q && !upcoming.length ? ' open' : ''}><summary>Past sessions (${past.length})</summary><ul class="lk-list">${past.map(linkRow).join('')}</ul></details>` : ''}
+      ${recorded.length ? `<h3 class="lk-sub">Recordings</h3><ul class="lk-list">${recorded.map(linkRow).join('')}</ul>` : ''}
+      ${past.length ? `<details class="lk-past"${q && !upcoming.length && !recorded.length ? ' open' : ''}><summary>Past sessions (${past.length})</summary><ul class="lk-list">${past.map(linkRow).join('')}</ul></details>` : ''}
     </section>`;
   }).join('');
 }
@@ -2029,6 +2060,12 @@ document.addEventListener('click', (event) => {
       document.querySelectorAll('[data-action="ev-filter"]').forEach(c => { const on = c.dataset.value === value; c.classList.toggle('is-on', on); c.setAttribute('aria-pressed', String(on)); });
       $('#prep-results').innerHTML = eventResults();
       break;
+    case 'copy-text': {
+      const done = () => { const t = button.textContent; button.textContent = 'Copied'; setTimeout(() => { button.textContent = t; }, 1600); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value || '').then(done, () => toast('Select the passcode and copy it.'));
+      else toast('Select the passcode and copy it.');
+      break;
+    }
     case 'ev-copy': {
       const text = button.closest('.ev-prompt').querySelector('.ev-prompt-text').textContent;
       const done = () => { button.textContent = 'Copied'; setTimeout(() => { button.textContent = 'Copy'; }, 1600); };

@@ -3041,11 +3041,12 @@ function officerStudyLinksPanel() {
   const zoomLoaded = links.filter(l => /us02web\.zoom\.us\/meeting\/register\//.test(l.url || '')).length;
   const linkRow = (s) => `
     <tr ${s.archived ? 'style="opacity:0.55;"' : ''}>
-      <td><strong>${esc(s.title)}</strong> ${s.archived ? '<span class="badge unpaid">Archived</span>' : ''}${s.description ? `<div style="font-size:12px;color:var(--muted);">${esc(s.description)}</div>` : ''}</td>
+      <td><strong>${esc(s.title)}</strong> ${s.archived ? '<span class="badge unpaid">Archived</span>' : ''}${s.recording_url ? ' <span class="badge paid">Recording added</span>' : ''}${s.description ? `<div style="font-size:12px;color:var(--muted);">${esc(s.description)}</div>` : ''}</td>
       <td style="max-width:260px;word-break:break-all;">${s.url ? `<a href="${safeUrl(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a>` : ''}</td>
       <td>${s.competitive_event ? `<span class="badge neutral">${esc(s.competitive_event)}</span>` : '<span class="muted">Links</span>'}</td>
       <td>${esc(s.created_by || '')}</td>
       <td style="white-space:nowrap;">
+        <button class="btn small secondary" onclick="openLinkRecording(${s.id})">${s.recording_url ? 'Edit recording' : 'Add recording'}</button>
         <button class="btn small secondary" onclick="toggleSlideshowArchived(${s.id}, ${s.archived ? 'false' : 'true'})">${s.archived ? 'Restore' : 'Archive'}</button>
         <button class="btn small danger" onclick="deleteSlideshow(${s.id})">Delete</button>
       </td>
@@ -3066,6 +3067,23 @@ function officerStudyLinksPanel() {
       </table></div>` : '<div class="empty">No links yet. <strong>Load the PA FBLA Zoom session links</strong> adds the 25 competitive-event Zoom sessions (registration links), or add your own.</div>'}
     </div>`;
 }
+// The recording of a session that already happened: paste the link and the
+// passcode from the host's email. The site shows "Watch recording" once the
+// session is over (by the date and time in the link's details).
+window.openLinkRecording = function(id) {
+  const s = (state.slideshows || []).find(x => x.id === id);
+  if (!s) return;
+  showModal(`Recording: ${s.title}`, `
+    <p class="hint" style="margin-top:0;">Paste the recording link and passcode the host sends after the session (for the PA FBLA sessions, it comes by email to people who registered). Once the session is over, the site swaps "Register" for "Watch recording" and shows the passcode with a Copy button.</p>
+    <div class="form-row"><label>Recording link</label><input id="rec-url" placeholder="https://us02web.zoom.us/rec/share/..." value="${esc(s.recording_url || '')}" /></div>
+    <div class="form-row"><label>Passcode (optional)</label><input id="rec-pass" placeholder="e.g. 4h&amp;Xw2!q" value="${esc(s.recording_passcode || '')}" autocomplete="off" spellcheck="false" /></div>
+    <p class="hint">The passcode is shown on the public site next to the link. Leave the link empty and save to remove the recording.</p>
+  `, async () => {
+    await api('PATCH', `/api/slideshows/${id}/recording`, { recording_url: $('#rec-url').value.trim(), recording_passcode: $('#rec-pass').value.trim() });
+    await loadAll(); render();
+    return true;
+  }, 'Save recording');
+};
 window.loadStudyLinks = async function() {
   try {
     const r = await api('POST', '/api/slideshows/load-links');
