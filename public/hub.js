@@ -1278,10 +1278,12 @@ function eventResults() {
   return list.length ? `<div class="ev-grid">${list.map(eventBox).join('')}</div>` : '<div class="empty-state"><h2>No events match.</h2></div>';
 }
 // Study materials that aren't for one event (e.g. "All Topics for Events").
+// Ones with no link yet (events PA hasn't posted guidelines for) stay off the
+// page until an officer adds the link.
 function otherMaterials() {
   if (!eventGuide || !eventGuide.events) return '';
   const keys = new Set(eventGuide.events.map(e => evKey(e.name)));
-  const rest = studyResources().filter(r => !keys.has(evKey(r.competitive_event || '')) && !keys.has(evKey(r.title)));
+  const rest = studyResources().filter(r => safeUrl(r.url) && !keys.has(evKey(r.competitive_event || '')) && !keys.has(evKey(r.title)));
   return rest.length ? `<div class="prep-section ev-other"><h2 class="lk-head">Other study materials</h2><div class="m-res-grid">${rest.map(resourceCard).join('')}</div></div>` : '';
 }
 function eventStartHere() {
