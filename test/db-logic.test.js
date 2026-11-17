@@ -126,3 +126,22 @@ test('the home card queue keeps only valid calendar refs, in order', () => {
   assert.deepEqual(db.homeCardQueue(undefined), []);
   assert.deepEqual(db.publicConfig({ home_card_queue: '["custom:7"]' }).home_card_queue, ['custom:7']);
 });
+
+test('homePage: defaults, blanks, and unsafe links', () => {
+  const d = db.homePage();
+  assert.equal(d.hero.buttons[0].link, 'prep');
+  assert.deepEqual(d.boxes.map(b => b.title), ['Your Event', 'Your Buddy Group', 'Study & Prep']);
+  assert.ok(d.instagram.startsWith('https://'));
+  // A saved blank title stays blank (the site hides that box).
+  const saved = db.homePage({ boxes: [{ title: '', link: 'prep' }, { title: 'X', link: 'calendar' }] });
+  assert.equal(saved.boxes[0].title, '');
+  assert.equal(saved.boxes[1].title, 'X');
+  // javascript: and unknown photos are dropped, not stored.
+  const bad = db.homePage({ hero: { photo: 'builtin:nope', buttons: [{ label: 'Go', link: 'javascript:alert(1)' }] }, instagram: 'javascript:x' });
+  assert.notEqual(bad.hero.buttons[0].link, 'javascript:alert(1)');
+  assert.notEqual(bad.hero.photo, 'builtin:nope');
+  assert.equal(bad.instagram, '');
+  // Long text is cut to the limit; JSON strings parse.
+  assert.equal(db.homePage({ hero: { title: 'a'.repeat(500) } }).hero.title.length, 80);
+  assert.equal(db.homePage(JSON.stringify({ footer: 'Hi' })).footer, 'Hi');
+});

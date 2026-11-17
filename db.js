@@ -1601,6 +1601,128 @@ function homeCardQueue(value) {
   }
   return out;
 }
+// ---------- Home page (Customization > Home Page) ----------
+// The photo hero and the three boxes under it. Stored as one JSON setting,
+// `home_page`; anything missing falls back to the defaults below. A photo is
+// one of the chapter photos in public/about-images ("builtin:<name>") or an
+// officer upload ("upload:<timestamp>", bytes in the home_photos collection).
+// A link is a page on the site (see HOME_LINK_PAGES) or an http(s) address.
+const HOME_PHOTOS = ['states-winners', 'states-hershey', 'states-stage', 'nationals-conference', 'nationals-delegation', 'regionals-awards', 'regionals-room', 'regionals-speaker'];
+const HOME_LINK_PAGES = ['calendar', 'signup', 'forms', 'updates', 'buddies', 'resources', 'prep', 'general', 'event-quiz', 'about', 'officers'];
+const HOME_PHOTO_SLOTS = ['hero', 'box1', 'box2', 'box3'];
+const HOME_DEFAULTS = {
+  hero: {
+    title: '',
+    text: 'Pick an event, get ready with your team, and compete at Regionals, States, and Nationals.',
+    photo: 'builtin:states-winners',
+    buttons: [{ label: 'Go to Study & Prep', link: 'prep' }, { label: 'About the chapter', link: 'about' }],
+  },
+  boxes: [
+    { title: 'Your Event', text: 'See which event you signed up for and who is on your team.', button: 'Check my event', link: 'signup', photo: 'builtin:regionals-awards' },
+    { title: 'Your Buddy Group', text: 'Type your name to find your officer buddy and the rest of your group.', button: 'Find my group', link: 'buddies', photo: 'builtin:states-hershey' },
+    { title: 'Study & Prep', text: 'Guidelines, study guides, and PA FBLA Zoom recordings for every event.', button: 'Start studying', link: 'prep', photo: 'builtin:nationals-conference' },
+  ],
+  // Site-wide text: the footer, the Instagram link, and the line under each
+  // page's title (blank = no line).
+  footer: 'Meetings, competitive events, and everything you need to get ready for them.',
+  instagram: 'https://www.instagram.com/statehighfbla/',
+  intros: {
+    calendar: 'Every meeting, event, and deadline. Subscribe once and new dates show up in your own calendar.',
+    forms: 'What the officers need from you. Required forms are marked.',
+    updates: 'News from the officers, pinned posts first.',
+    resources: 'Slides from every chapter meeting, newest first.',
+    prep: '',
+    general: 'PA FBLA, national FBLA, and chapter documents in one place.',
+    buddies: '',
+  },
+};
+function homeText(v, fallback, max) {
+  return v === undefined || v === null ? fallback : String(v).replace(/\s+/g, ' ').trim().slice(0, max);
+}
+function homeLink(v, fallback) {
+  if (v === undefined || v === null) return fallback;
+  const t = String(v).trim().slice(0, 300);
+  if (HOME_LINK_PAGES.includes(t)) return t;
+  return /^https?:\/\/[^\s"'<>]+$/i.test(t) ? t : '';
+}
+function homePhoto(v, fallback) {
+  const t = String(v === undefined || v === null ? '' : v).trim();
+  const b = /^builtin:([a-z-]+)$/.exec(t);
+  if (b && HOME_PHOTOS.includes(b[1])) return t;
+  if (/^upload:[0-9: -]{10,19}$/.test(t)) return t;
+  return fallback;
+}
+function homePage(value) {
+  let v = value;
+  if (typeof v === 'string') { try { v = JSON.parse(v || '{}'); } catch { v = {}; } }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) v = {};
+  const h = v.hero && typeof v.hero === 'object' ? v.hero : {};
+  const d = HOME_DEFAULTS.hero;
+  // Saved buttons/boxes replace the defaults entirely (a blank one is hidden);
+  // never saved means the defaults.
+  const savedButtons = Array.isArray(h.buttons);
+  const hero = {
+    title: homeText(h.title, d.title, 80),
+    text: homeText(h.text, d.text, 220),
+    photo: homePhoto(h.photo, d.photo),
+    buttons: [0, 1].map(i => {
+      const b = savedButtons && h.buttons[i] && typeof h.buttons[i] === 'object' ? h.buttons[i] : {};
+      const base = savedButtons ? { label: '', link: '' } : d.buttons[i];
+      return { label: homeText(b.label, base.label, 40), link: homeLink(b.link, base.link) };
+    }),
+  };
+  const savedBoxes = Array.isArray(v.boxes);
+  const boxes = HOME_DEFAULTS.boxes.map((def, i) => {
+    const b = savedBoxes && v.boxes[i] && typeof v.boxes[i] === 'object' ? v.boxes[i] : {};
+    const base = savedBoxes ? { title: '', text: '', button: '', link: '', photo: def.photo } : def;
+    return {
+      title: homeText(b.title, base.title, 60),
+      text: homeText(b.text, base.text, 180),
+      button: homeText(b.button, base.button, 30),
+      link: homeLink(b.link, base.link),
+      photo: homePhoto(b.photo, base.photo),
+    };
+  });
+  const introsIn = v.intros && typeof v.intros === 'object' ? v.intros : {};
+  const intros = {};
+  for (const [k, def] of Object.entries(HOME_DEFAULTS.intros)) intros[k] = homeText(introsIn[k], def, 200);
+  const ig = v.instagram === undefined || v.instagram === null ? HOME_DEFAULTS.instagram : String(v.instagram).trim().slice(0, 200);
+  return {
+    hero,
+    boxes,
+    footer: homeText(v.footer, HOME_DEFAULTS.footer, 200),
+    instagram: /^https?:\/\/[^\s"'<>]+$/i.test(ig) ? ig : '',
+    intros,
+  };
+}
+// Officer-uploaded home page photos, one per slot. The browser shrinks them
+// to a JPEG first; like resource covers they stay out of the hub bundle and
+// the Sheets backup.
+const HOME_PHOTO_MAX_BYTES = 750 * 1024;
+async function setHomePhoto(slot, dataUrl) {
+  await init();
+  if (!HOME_PHOTO_SLOTS.includes(slot)) throw new Error('Unknown photo spot.');
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ''));
+  if (!m) throw new Error('Upload a JPEG, PNG, or WebP image.');
+  const bytes = Buffer.from(m[2], 'base64');
+  if (!bytes.length) throw new Error('That image is empty.');
+  if (bytes.length > HOME_PHOTO_MAX_BYTES) throw new Error('That image is too large. Try a smaller one.');
+  const updated_at = tsString();
+  await mongoDb.collection('home_photos').replaceOne(
+    { _id: slot },
+    { _id: slot, mime: m[1], data: m[2], size: bytes.length, updated_at },
+    { upsert: true },
+  );
+  return { ok: true, updated_at };
+}
+// { mime, buffer, updated_at } or null.
+async function getHomePhoto(slot) {
+  await init();
+  if (!HOME_PHOTO_SLOTS.includes(slot)) return null;
+  const row = await mongoDb.collection('home_photos').findOne({ _id: slot });
+  return row ? { mime: row.mime, buffer: Buffer.from(row.data, 'base64'), updated_at: row.updated_at } : null;
+}
+
 // The display settings the public hub needs. Nothing financial or internal.
 function publicConfig(s) {
   return {
@@ -1612,6 +1734,7 @@ function publicConfig(s) {
     home_card_button: s.home_card_button || '',
     home_card_link: s.home_card_link || '',
     home_card_queue: homeCardQueue(s.home_card_queue),
+    home_page: homePage(s.home_page),
     // Hidden until an officer turns it on (Google Forms tab).
     event_quiz_visible: s.event_quiz_visible === '1',
     // Event Sign-Up page: shown on the hub only while officers have it open.
@@ -1703,6 +1826,7 @@ module.exports = {
   backupJson,
   listSlideshows, addSlideshow, loadStudyLinks, deleteSlideshow, setSlideshowArchived, setSlideshowRecording, markSlideshowReviewed,
   setResourceCover, removeResourceCover, getResourceCover,
+  homePage, HOME_DEFAULTS, HOME_PHOTOS, HOME_PHOTO_SLOTS, setHomePhoto, getHomePhoto,
   publicHub, publicConfig, competitiveEvents, DEFAULT_COMPETITIVE_EVENTS, systemStats,
 };
 

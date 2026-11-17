@@ -550,6 +550,11 @@ app.put('/api/settings/customization', requireOfficer, ah(async (req, res) => {
     await db.setSetting('home_card_link', /^https?:\/\//i.test(link) ? link : '');
     changed.push('home card link');
   }
+  // Home page hero and the three boxes under it (sanitized in db.homePage).
+  if (b.home_page !== undefined) {
+    await db.setSetting('home_page', b.home_page === null ? '' : JSON.stringify(db.homePage(b.home_page)));
+    changed.push(b.home_page === null ? 'home page reset' : 'home page');
+  }
   if (b.home_card_queue !== undefined) { await db.setSetting('home_card_queue', JSON.stringify(db.homeCardQueue(b.home_card_queue))); changed.push('home card queue'); }
   if (b.chapter_name !== undefined) {
     await db.setSetting('chapter_name', String(b.chapter_name).trim().slice(0, 80));
@@ -761,6 +766,20 @@ app.get('/api/slideshows/:id/cover', requireOfficer, ah(async (req, res) => {
   const cover = await db.getResourceCover(req.params.id);
   if (!cover) return res.status(404).json({ error: 'No cover' });
   sendCover(res, cover);
+}));
+// Home page photos an officer uploaded (hero, box1-3). Public: they're on
+// the home page for everyone.
+app.put('/api/home-photos/:slot', requireOfficer, ah(async (req, res) => {
+  try {
+    const out = await db.setHomePhoto(String(req.params.slot), (req.body || {}).image);
+    await db.logAudit(req.session.name, 'home_photo', `${req.params.slot} photo uploaded`);
+    res.json(out);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+}));
+app.get('/api/public/home-photo/:slot', ah(async (req, res) => {
+  const photo = await db.getHomePhoto(String(req.params.slot));
+  if (!photo) return res.status(404).json({ error: 'No photo' });
+  sendCover(res, photo);
 }));
 // Public: only covers of resources that are on the hub (not archived).
 app.get('/api/public/resources/:id/cover', ah(async (req, res) => {

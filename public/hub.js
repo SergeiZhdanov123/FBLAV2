@@ -102,6 +102,8 @@ const todayISO = () => {
 };
 const parts = (ds) => { const [y, m, d] = String(ds).split('-').map(Number); return { y, m, d }; };
 const dateLabel = (ds) => { if (!ds) return ''; const { y, m, d } = parts(ds); return `${MONTHS[m - 1]} ${d}, ${y}`; };
+// "Thursday, November 19".
+const longDate = (ds) => { if (!ds) return ''; const { y, m, d } = parts(ds); return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); };
 const shortDate = (ds) => { if (!ds) return ''; const { m, d } = parts(ds); return `${MONTHS[m - 1].slice(0, 3)} ${d}`; };
 // "14:30" -> "2:30 PM".
 function fmtTime(hhmm) {
@@ -167,7 +169,7 @@ function heading(title, description, action = '') {
   return `<section class="m-page-heading"><div><h1>${title}</h1>${description ? `<p class="m-subhead">${description}</p>` : ''}</div>${action}</section>`;
 }
 function sectionHeading(title, link, label, description = '') {
-  return `<div class="m-section-head"><div><h2>${title}</h2>${description ? `<p class="m-subhead">${description}</p>` : ''}</div><a class="m-more-link" href="#${link}">${label} →</a></div>`;
+  return `<div class="m-section-head"><div><h2>${title}</h2>${description ? `<p class="m-subhead">${description}</p>` : ''}</div><a class="m-more-link" href="#${link}">${label}</a></div>`;
 }
 function whenText(c) {
   const bits = [];
@@ -180,22 +182,23 @@ function eventRow(c) {
   const { m, d } = parts(c.date);
   const meta = kindMeta(c.kind);
   return `<button class="m-event-row" data-action="item" data-id="${esc(c.key)}" type="button">
-    <span class="m-event-date"><b>${d}</b><span>${MONTHS[m - 1].slice(0, 3).toUpperCase()}</span></span>
+    <span class="date-tile"><span>${MONTHS[m - 1].slice(0, 3)}</span><b>${d}</b></span>
     <span class="m-event-info"><strong>${esc(c.title)}</strong><span>${esc(whenText(c))}</span></span>
-    <span class="m-event-type ${meta.cls}"${kindStyle(meta)}>${esc(meta.label.toUpperCase())}</span>
+    ${c.kind === 'meeting' || whenText(c) === meta.label ? '' : `<span class="m-event-type ${meta.cls}"${kindStyle(meta)}>${esc(meta.label)}</span>`}
   </button>`;
 }
 function updateRow(a) {
   return `<button class="m-ann-preview" data-action="update" data-id="${a.id}" type="button">
-    <span class="m-ann-preview-top">${a.pinned ? `<span class="m-pin-mark">${icon('pin')} Pinned</span>` : ''}${isNewUpdate(a) ? '<span class="hub-new">NEW</span>' : ''}<time>${esc(postedLabel(a.created_at))}</time></span>
+    <span class="m-ann-preview-top">${a.pinned ? `<span class="m-pin-mark">${icon('pin')} Pinned</span>` : ''}${isNewUpdate(a) ? '<span class="hub-new">New</span>' : ''}<time>${esc(postedLabel(a.created_at))}</time></span>
     <strong>${esc(a.title)}</strong>
     ${a.body ? `<p>${esc(String(a.body).length > 140 ? String(a.body).slice(0, 140).trim() + '…' : a.body)}</p>` : ''}
   </button>`;
 }
 function resourceRow(r) {
   const href = safeUrl(r.url);
-  const inner = `<span class="m-resource-icon">${icon(kindInfo(r.kind).icon)}</span>
-    <span class="m-resource-copy"><strong>${esc(r.title)}</strong><span>${esc(kindInfo(r.kind).title)}${r.event_name ? ', ' + esc(r.event_name) : r.competitive_event ? ', ' + esc(r.competitive_event) : ''}</span></span>${href ? icon('external') : ''}`;
+  const source = href ? linkSource(r.url) : '';
+  const meta = [postedLabel(r.created_at), source].filter(Boolean).join(', ');
+  const inner = `<span class="m-resource-copy"><strong>${esc(r.title)}</strong>${meta ? `<span>${esc(meta)}</span>` : ''}</span>${href ? `<span class="row-go">${icon('external')}</span>` : ''}`;
   return href
     ? `<a class="m-resource-row" href="${href}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>`
     : `<a class="m-resource-row" href="#${kindInfo(r.kind).page}">${inner}</a>`;
@@ -205,8 +208,7 @@ const reqMark = (f) => (f.required ? '<span class="req-mark" aria-hidden="true">
 function formRow(f) {
   const href = safeUrl(f.url);
   return `<a class="m-resource-row" href="${href || '#forms'}" ${href ? 'target="_blank" rel="noopener"' : ''}>
-    <span class="m-resource-icon">${icon('file')}</span>
-    <span class="m-resource-copy"><strong>${esc(f.title)}${reqMark(f)}</strong><span>${f.due_date ? `Respond by ${esc(shortDate(f.due_date))}` : (f.event_name ? esc(f.event_name) : 'Google Form')}</span></span>${href ? icon('external') : ''}
+    <span class="m-resource-copy"><strong>${esc(f.title)}</strong>${f.due_date ? `<span>Due ${esc(longDate(f.due_date))}</span>` : (f.event_name ? `<span>${esc(f.event_name)}</span>` : '<span>Google Form</span>')}</span>${f.required ? '<span class="pill pill-red">Required</span>' : ''}${href ? `<span class="row-go">${icon('external')}</span>` : ''}
   </a>`;
 }
 // Where a resource link opens, in words a visitor recognizes.
@@ -288,7 +290,7 @@ function resourceCard(r) {
   const inner = `
     ${resourceCover(r, tag)}
     <div class="res-body">
-      <span class="res-kicker">${esc(tag || kindInfo(r.kind).one)}</span>
+      ${tag ? `<span class="res-kicker">${esc(tag)}</span>` : ''}
       <h2 class="res-title">${esc(r.title)}</h2>
       ${r.description ? `<p class="res-desc">${esc(r.description)}</p>` : ''}
       <div class="res-foot">
@@ -367,6 +369,7 @@ function renderNav() {
   $('#navigation').innerHTML = groups.map(([label, items]) =>
     `<p class="m-nav-label">${label}</p><nav class="m-nav" aria-label="${label}">${items.map(link).join('')}</nav>`).join('') +
     `<p class="m-nav-label">Chapter</p><nav class="m-nav" aria-label="Chapter"><a href="/about" data-action="about" class="m-nav-item" title="About the Chapter">${icon('about')}<span>About the Chapter</span></a></nav>`;
+  renderTopNav();
   $('#mobile-navigation').innerHTML = NAV.slice(0, 4).map(([id, ic, title]) =>
     `<a href="#${id}" class="${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}${esc(title)}</a>`).join('') +
     `<button id="mobile-more" class="${NAV.slice(4).some(([id]) => id === state.page) || state.page === 'signup' || state.page === 'buddies' ? 'active' : ''}" data-action="more-menu" type="button" aria-label="More pages" aria-haspopup="true" aria-expanded="false" aria-controls="m-more-menu">${icon('menu')}More</button>`;
@@ -376,9 +379,41 @@ function renderNav() {
   $('#m-more-menu').innerHTML = (signupOpen() ? moreLink(SIGNUP_NAV) : '') + (buddyVisible() ? moreLink(BUDDY_NAV) : '') + NAV.slice(4).map(moreLink).join('') +
     `<a href="/about" data-action="about">${icon('about')}About the Chapter</a>` +
     `<span class="m-more-sep" role="separator"></span>` +
-    `<button type="button" data-action="officers">${icon('help')}Need help?</button>` +
-    `<a href="https://www.instagram.com/statehighfbla/" target="_blank" rel="noopener">${icon('instagram')}Instagram<span class="sr-only"> (opens in a new tab)</span></a>` +
+    `<button type="button" data-action="officers">${icon('help')}Questions?</button>` +
+    (instagramUrl() ? `<a href="${safeUrl(instagramUrl())}" target="_blank" rel="noopener">${icon('instagram')}Instagram<span class="sr-only"> (opens in a new tab)</span></a>` : '') +
     `<button type="button" data-action="officer-login">${icon('lock')}Officer sign in</button>`;
+}
+// Desktop: a top bar with the main pages and a Resources drop-down. Tablet
+// widths get the same links in a panel under the header (the Menu button).
+const RESOURCE_PAGES = ['resources', 'prep', 'general'];
+function renderTopNav() {
+  const cur = (id) => (state.page === id ? ' aria-current="page"' : '');
+  const pages = [['calendar', 'Calendar']];
+  if (signupOpen()) pages.push(['signup', 'Event Sign-Up']);
+  pages.push(['forms', 'Forms'], ['updates', 'Announcements']);
+  if (buddyVisible()) pages.push(['buddies', 'Buddy System']);
+  const resLinks = [['resources', 'Meeting slides', 'Slides from every chapter meeting'], ['prep', 'Study & Prep', 'Event guides and Zoom recordings'], ['general', 'General resources', 'PA FBLA and national FBLA links']];
+  const resActive = RESOURCE_PAGES.includes(state.page);
+  $('#topnav').innerHTML = pages.map(([id, t]) => `<a href="#${id}" class="site-nav-link"${cur(id)}>${esc(t)}</a>`).join('') +
+    `<div class="site-nav-drop${resActive ? ' is-active' : ''}">
+      <button type="button" class="site-nav-link" data-action="res-menu" aria-expanded="false" aria-haspopup="true">Resources<svg viewBox="0 0 24 24" aria-hidden="true" class="site-caret"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="site-drop-panel">${resLinks.map(([id, t, sub]) => `<a href="#${id}"${cur(id)}><strong>${esc(t)}</strong><span>${esc(sub)}</span></a>`).join('')}</div>
+    </div>` +
+    `<a href="/about" data-action="about" class="site-nav-link">About</a>`;
+  $('#site-menu').innerHTML = `<div class="site-menu-inner">
+    <a href="#home"${cur('home')}>Home</a>
+    ${pages.map(([id, t]) => `<a href="#${id}"${cur(id)}>${esc(t)}</a>`).join('')}
+    ${resLinks.map(([id, t]) => `<a href="#${id}"${cur(id)}>${esc(t)}</a>`).join('')}
+    <a href="/about" data-action="about">About the chapter</a>
+    <button type="button" data-action="officer-login">${icon('lock')}Officer sign in</button>
+  </div>`;
+}
+function toggleSiteMenu(force) {
+  const menu = $('#site-menu'), btn = $('#site-menu-btn');
+  if (!menu || !btn) return;
+  const open = force === undefined ? menu.hidden : force;
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
 }
 function openMoreMenu() {
   const menu = $('#m-more-menu');
@@ -418,11 +453,20 @@ function tickCountdowns() {
   document.querySelectorAll('[data-target]').forEach(el => {
     const seconds = Math.max(0, Math.floor((Number(el.dataset.target) - Date.now()) / 1000));
     if (!seconds) { el.innerHTML = `<span class="m-cd-now">${esc(el.dataset.done || 'Happening now')}</span>`; return; }
+    if (el.dataset.words) { const t = inWords(seconds); if (el.textContent !== t) el.textContent = t; return; }
     const values = [Math.floor(seconds / 86400), Math.floor(seconds % 86400 / 3600), Math.floor(seconds % 3600 / 60), seconds % 60];
     el.innerHTML = values.map((n, i) => `<span class="m-cd-unit"><span class="m-cd-n">${String(n).padStart(2, '0')}</span><span class="m-cd-l">${['days', 'hrs', 'min', 'sec'][i]}</span></span>`).join('');
   });
 }
 
+// "Starts in 2 days, 11 hours" (minutes once it is under a day away).
+function inWords(seconds) {
+  const d = Math.floor(seconds / 86400), h = Math.floor(seconds % 86400 / 3600), m = Math.max(1, Math.ceil(seconds % 3600 / 60));
+  const n = (v, w) => `${v} ${w}${v === 1 ? '' : 's'}`;
+  if (d) return `Starts in ${n(d, 'day')}${h ? ', ' + n(h, 'hour') : ''}`;
+  if (h) return `Starts in ${n(h, 'hour')}, ${n(m === 60 ? 59 : m, 'minute')}`;
+  return `Starts in ${n(m, 'minute')}`;
+}
 // When a calendar item starts: its time, or the start of its day.
 const startsAt = (c) => new Date(`${c.date}T${c.time || '00:00'}:00`).getTime();
 // When an item stops being "current": a timed item at its start time, an
@@ -437,7 +481,7 @@ function queuedCardItem() {
   const now = Date.now();
   return refs.map(r => byRef.get(r)).find(c => c && c.date && doneAt(c) > now) || null;
 }
-const CARD_EYEBROW = { meeting: 'NEXT CHAPTER MEETING', deadline: 'UPCOMING DEADLINE', event: 'UPCOMING EVENT' };
+const CARD_EYEBROW = { meeting: 'Next meeting', deadline: 'Coming up', event: 'Coming up' };
 
 // The big blue card: the officers' own message when they wrote one, then their
 // queue, otherwise the next chapter meeting (or the next thing on the calendar).
@@ -448,12 +492,12 @@ function priorityCard() {
     const link = safeUrl(c.home_card_link);
     const label = (c.home_card_button || '').trim() || 'View the calendar';
     return `<article class="m-priority-card">
-      <div class="m-eyebrow"><span class="m-live-dot"></span>FROM YOUR OFFICERS</div>
+      <div class="m-eyebrow">From the officers</div>
       <h2>${esc((c.home_card_title || '').trim() || 'A note from your officers')}</h2>
       ${(c.home_card_desc || '').trim() ? `<p>${esc(c.home_card_desc)}</p>` : ''}
       ${link
-        ? `<a class="m-btn-light" href="${link}" target="_blank" rel="noopener">${esc(label)} →</a>`
-        : `<a class="m-btn-light" href="#calendar">${esc(label)} →</a>`}
+        ? `<a class="m-btn-light" href="${link}" target="_blank" rel="noopener">${esc(label)}</a>`
+        : `<a class="m-btn-light" href="#calendar">${esc(label)}</a>`}
     </article>`;
   }
   const queued = queuedCardItem();
@@ -462,10 +506,10 @@ function priorityCard() {
   const meeting = queued || next.find(x => x.kind === 'meeting') || next[0];
   if (!meeting) {
     return `<article class="m-priority-card">
-      <div class="m-eyebrow"><span class="m-live-dot"></span>CHAPTER CALENDAR</div>
+      <div class="m-eyebrow">Calendar</div>
       <h2>Nothing is scheduled yet</h2>
       <p>New meetings and events show up here as soon as the officers add them. In the meantime, read about what the chapter does.</p>
-      <a class="m-btn-light" href="/about" data-action="about">About the chapter →</a>
+      <a class="m-btn-light" href="/about" data-action="about">About the chapter</a>
     </article>`;
   }
   const isMeeting = meeting.kind === 'meeting';
@@ -474,65 +518,135 @@ function priorityCard() {
   // its day(s): "happening now" if it spans several days, otherwise "today".
   const target = new Date(`${meeting.date}T${meeting.time || '00:00'}:00`).getTime();
   const done = meeting.end_date && meeting.end_date >= todayISO() ? 'Happening now' : 'Today';
-  const eyebrow = queued ? (CARD_EYEBROW[meeting.kind] || 'COMING UP') : (isMeeting ? 'NEXT CHAPTER MEETING' : 'COMING UP');
+  const eyebrow = queued ? (CARD_EYEBROW[meeting.kind] || 'Coming up') : (isMeeting ? 'Next meeting' : 'Coming up');
   const advanceAt = doneAt(meeting);
+  const { y, m, d } = parts(meeting.date);
+  const weekday = new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long' });
+  const when = [meeting.time ? fmtTime(meeting.time) : (meeting.end_date ? `Through ${shortDate(meeting.end_date)}` : 'All day'), meeting.location].filter(Boolean).join(', ');
   return `<article class="m-priority-card" data-advance-at="${advanceAt}">
-    <div class="m-eyebrow"><span class="m-live-dot"></span>${eyebrow}</div>
-    <h2>${esc(meeting.title)}</h2>
-    ${meeting.description ? `<p>${esc(meeting.description)}</p>` : ''}
-    <div class="m-priority-meta">
-      <span>${icon('calendar')}${esc(dateLabel(meeting.date))}${meeting.end_date ? ` to ${esc(dateLabel(meeting.end_date))}` : ''}</span>
-      ${meeting.time ? `<span>${icon('clock')}${esc(fmtTime(meeting.time))}</span>` : ''}
-      ${meeting.location ? `<span>${icon('location')}${esc(meeting.location)}</span>` : ''}
+    <div class="mc-top"><span class="mc-label">${eyebrow}</span></div>
+    <div class="mc-main">
+      <span class="date-tile date-tile-lg"><span>${MONTHS[m - 1].slice(0, 3)}</span><b>${d}</b></span>
+      <div class="mc-copy">
+        <h2>${esc(meeting.title)}</h2>
+        <p class="mc-when">${esc(weekday)}, ${esc(when)}</p>
+      </div>
     </div>
-    <div class="m-priority-countdown" data-target="${Number.isFinite(target) ? target : 0}" data-done="${done}" role="timer" aria-label="Time until ${esc(meeting.title)}"></div>
-    <button class="m-btn-light" data-action="item" data-id="${esc(meeting.key)}" type="button">View ${isMeeting ? 'meeting ' : ''}details →</button>
+    ${meeting.description ? `<p class="mc-desc">${esc(meeting.description)}</p>` : ''}
+    <div class="mc-countdown">
+      <span class="mc-countdown-label">Starts in</span>
+      <div class="m-priority-countdown" data-target="${Number.isFinite(target) ? target : 0}" data-done="${done}" role="timer" aria-label="Time until ${esc(meeting.title)}"></div>
+    </div>
+    <div class="mc-actions">
+      <button class="button" data-action="item" data-id="${esc(meeting.key)}" type="button">${isMeeting ? 'Meeting' : 'More'} details</button>
+      <button class="button secondary" data-action="download-item" data-id="${esc(meeting.key)}" type="button">${icon('calendar')}Add to calendar</button>
+    </div>
   </article>`;
+}
+
+// ---------- Home page content (officers edit it in Customization) ----------
+// Same defaults as db.js HOME_DEFAULTS, for a server that predates the setting.
+const HOME_DEFAULTS = {
+  hero: { title: '', text: 'Pick an event, get ready with your team, and compete at Regionals, States, and Nationals.', photo: 'builtin:states-winners',
+    buttons: [{ label: 'Go to Study & Prep', link: 'prep' }, { label: 'About the chapter', link: 'about' }] },
+  boxes: [
+    { title: 'Your Event', text: 'See which event you signed up for and who is on your team.', button: 'Check my event', link: 'signup', photo: 'builtin:regionals-awards' },
+    { title: 'Your Buddy Group', text: 'Type your name to find your officer buddy and the rest of your group.', button: 'Find my group', link: 'buddies', photo: 'builtin:states-hershey' },
+    { title: 'Study & Prep', text: 'Guidelines, study guides, and PA FBLA Zoom recordings for every event.', button: 'Start studying', link: 'prep', photo: 'builtin:nationals-conference' },
+  ],
+  footer: 'Meetings, competitive events, and everything you need to get ready for them.',
+  instagram: 'https://www.instagram.com/statehighfbla/',
+  intros: {
+    calendar: 'Every meeting, event, and deadline. Subscribe once and new dates show up in your own calendar.',
+    forms: 'What the officers need from you. Required forms are marked.',
+    updates: 'News from the officers, pinned posts first.',
+    resources: 'Slides from every chapter meeting, newest first.',
+    prep: '',
+    general: 'PA FBLA, national FBLA, and chapter documents in one place.',
+    buddies: '',
+  },
+};
+const homePageCfg = () => cfg().home_page || HOME_DEFAULTS;
+// The line under a page's title (officers edit these too). Escaped here
+// because heading() takes HTML.
+const intro = (page) => esc((homePageCfg().intros || HOME_DEFAULTS.intros)[page] || '');
+// Where each chapter photo looks best when cropped.
+const PHOTO_FOCUS = { 'states-winners': '50% 38%', 'states-hershey': '50% 62%', 'states-stage': '50% 55%', 'nationals-conference': '50% 22%', 'nationals-delegation': '50% 30%', 'regionals-awards': '50% 40%', 'regionals-room': '50% 45%', 'regionals-speaker': '50% 50%' };
+function homePhotoUrl(photo, slot) {
+  const p = String(photo || '');
+  if (p.startsWith('upload:')) return `/api/public/home-photo/${slot}?v=${encodeURIComponent(p.slice(7))}`;
+  const name = p.startsWith('builtin:') ? p.slice(8) : 'states-winners';
+  return `about-images/${name}.webp`;
+}
+const photoFocus = (photo) => PHOTO_FOCUS[String(photo || '').replace('builtin:', '')] || '50% 40%';
+// A page that's switched off doesn't get linked from Home.
+function linkLive(link) {
+  if (link === 'signup') return signupOpen();
+  if (link === 'buddies') return buddyVisible();
+  if (link === 'event-quiz') return quizVisible();
+  return !!link;
+}
+// An <a> (or a button, for the officers pop-up) for a Home link.
+function homeLinkTag(link, cls, inner) {
+  if (link === 'officers') return `<button type="button" class="${cls}" data-action="officers">${inner}</button>`;
+  if (link === 'about') return `<a class="${cls}" href="/about" data-action="about">${inner}</a>`;
+  if (/^https?:\/\//i.test(link)) return `<a class="${cls}" href="${safeUrl(link)}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>`;
+  return `<a class="${cls}" href="#${esc(link)}">${inner}</a>`;
 }
 
 function renderHome() {
   const d = D();
-  const dateChip = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  const next = upcoming();
-  const in30 = (() => { const t = new Date(); t.setDate(t.getDate() + 30); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; })();
-  const soon = next.filter(c => c.date <= in30).length;
+  const today = todayISO();
+  const next = upcoming().filter(c => doneAt(c) > Date.now());
   const meetingRes = (d.resources || []).filter(r => r.kind === 'slideshow');
-  const studyRes = (d.resources || []).filter(r => r.kind === 'resource');
-  const forms = d.forms || [];
-  const anns = (d.announcements || []).slice(0, 3);
+  // Forms still worth opening: no due date, or not past it yet.
+  const forms = (d.forms || []).filter(f => !f.due_date || f.due_date >= today);
+  const anns = (d.announcements || []).slice(0, 2);
+  const hp = homePageCfg();
+  // Boxes pointing at a page that's turned off (sign-up, buddies, quiz) hide.
+  const boxes = hp.boxes.filter(x => x.title && linkLive(x.link));
   return `${countdownBanners()}
-  ${heading(`Welcome to ${esc(chapterName())}.`, "Here's what is happening in FBLA this week.", `<span class="m-date-chip">${icon('calendar')}${esc(dateChip)}</span>`)}
-  <section class="m-priority-grid">
-    ${priorityCard()}
-    <article class="public-prep-card">
-      <div class="m-card-top"><p class="m-kicker">Study &amp; Prep</p><span class="public-prep-icon">${icon('book')}</span></div>
-      <h2>Prepare for your event</h2>
-      <p>Search the chapter's guides, practice materials, and conference prep.</p>
-      <a href="#prep" class="button secondary">Browse resources →</a>
-    </article>
+  <section class="hero">
+    <img class="hero-img" src="${esc(homePhotoUrl(hp.hero.photo, 'hero'))}" alt="" />
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <h1>${esc(hp.hero.title || chapterName())}</h1>
+        ${hp.hero.text ? `<p>${esc(hp.hero.text)}</p>` : ''}
+        <div class="hero-actions">
+          ${hp.hero.buttons.filter(x => x.label && x.link && linkLive(x.link)).map((x, i) => homeLinkTag(x.link, `button ${i === 0 ? 'gold' : 'on-dark'}`, esc(x.label))).join('')}
+        </div>
+      </div>
+      ${priorityCard()}
+    </div>
   </section>
-  <section class="m-metrics" aria-label="Chapter shortcuts">
-    <a class="m-metric" href="#calendar"><div class="m-metric-top"><span class="m-metric-icon blue">${icon('calendar')}</span><span class="m-mini-tag good">Next 30 days</span></div><h3>Upcoming dates</h3><p><b>${soon} ${soon === 1 ? 'date' : 'dates'}</b> on the chapter calendar</p></a>
-    <a class="m-metric" href="#forms"><div class="m-metric-top"><span class="m-metric-icon amber">${icon('file')}</span>${forms.length ? `<span class="m-mini-tag notice">${forms.length} open</span>` : ''}</div><h3>Forms</h3><p>${forms.length ? `<b>${forms.length} Google ${forms.length === 1 ? 'Form' : 'Forms'}</b> from the chapter` : 'No forms right now'}</p></a>
-    <a class="m-metric" href="#resources"><div class="m-metric-top"><span class="m-metric-icon purple">${icon('slides')}</span></div><h3>Meeting Resources</h3><p>${meetingRes.length ? `<b>${meetingRes.length}</b> meeting ${meetingRes.length === 1 ? 'resource' : 'resources'}` : 'Slides, agendas, and chapter guides'}</p></a>
-    <a class="m-metric" href="#prep"><div class="m-metric-top"><span class="m-metric-icon green">${icon('book')}</span></div><h3>Study &amp; Prep</h3><p>${studyRes.length ? `<b>${studyRes.length}</b> study ${studyRes.length === 1 ? 'material' : 'materials'}` : 'Guides and practice materials'}</p></a>
+
+  ${boxes.length ? `<section class="shortcuts" style="--boxes:${boxes.length}">
+    ${boxes.map(x => homeLinkTag(x.link, 'shortcut', `
+      <span class="shortcut-img"><img src="${esc(homePhotoUrl(x.photo, `box${hp.boxes.indexOf(x) + 1}`))}" alt="" loading="lazy" decoding="async" style="object-position:${photoFocus(x.photo)}" /></span>
+      <span class="shortcut-body"><strong>${esc(x.title)}</strong>${x.text ? `<span>${esc(x.text)}</span>` : ''}${x.button ? `<em>${esc(x.button)}</em>` : ''}</span>`)).join('')}
+  </section>` : ''}
+
+  <section class="home-grid">
+    <article class="panel">
+      ${sectionHeading('Coming up', 'calendar', 'Full calendar')}
+      ${next.length ? `<div class="m-event-list">${next.slice(0, 6).map(eventRow).join('')}</div>` : '<p class="m-empty">Nothing is scheduled yet.</p>'}
+    </article>
+    <div class="home-side">
+      <article class="panel">
+        ${sectionHeading('Announcements', 'updates', 'See all')}
+        ${anns.length ? `<div>${anns.map(updateRow).join('')}</div>` : '<p class="m-empty">No announcements yet.</p>'}
+      </article>
+      <article class="panel">
+        ${sectionHeading('Forms', 'forms', 'See all')}
+        ${forms.length ? `<div class="m-resource-list">${forms.slice(0, 4).map(formRow).join('')}</div>` : '<p class="m-empty">Nothing to fill out right now.</p>'}
+      </article>
+    </div>
   </section>
-  <section class="m-content-grid">
-    <article class="m-section-card">${sectionHeading('Upcoming events', 'calendar', 'View calendar', 'Meetings, events, and deadlines.')}
-      ${next.length ? `<div class="m-event-list">${next.slice(0, 4).map(eventRow).join('')}</div>` : '<p class="m-empty">Nothing is scheduled yet.</p>'}
-    </article>
-    <article class="m-section-card">${sectionHeading('Announcements', 'updates', 'See all', 'The latest from your chapter.')}
-      ${anns.length ? `<div>${anns.map(updateRow).join('')}</div>` : '<p class="m-empty">No announcements yet.</p>'}
-    </article>
-  </section>
-  <section class="m-content-grid">
-    <article class="m-section-card">${sectionHeading('Meeting Resources', 'resources', 'See all', 'Agendas, slide decks, and chapter materials.')}
-      ${meetingRes.length ? `<div class="m-resource-list">${meetingRes.slice(0, 3).map(resourceRow).join('')}</div>` : '<p class="m-empty">No meeting materials posted yet.</p>'}
-    </article>
-    <article class="m-section-card">${sectionHeading('Forms', 'forms', 'See all', 'Google Forms from the chapter.')}
-      ${forms.length ? `<div class="m-resource-list">${forms.slice(0, 3).map(formRow).join('')}</div>` : '<p class="m-empty">No forms right now.</p>'}
-    </article>
-  </section>`;
+
+  ${meetingRes.length ? `<section class="home-slides">
+    ${sectionHeading('Slides from recent meetings', 'resources', 'All slides')}
+    <div class="m-res-grid">${meetingRes.slice(0, 4).map(resourceCard).join('')}</div>
+  </section>` : ''}`;
 }
 
 // The calendar is V1's member calendar: the month grid (click a day for its
@@ -606,13 +720,13 @@ function renderCalendar() {
     </div>`;
   const toggle = `<div class="cal-page-actions"><button class="button secondary" type="button" data-action="add-calendar">${icon('calendar')}Add to your calendar</button>${tabs(['Month', 'List'], state.calendarView === 'month' ? 'Month' : 'List', 'calendar-view', 'Calendar display')}</div>`;
   if (state.calendarView === 'list') {
-    return `${heading('Calendar', 'Meetings, events, and deadlines in one place.', toggle)}
+    return `${heading('Calendar', intro('calendar'), toggle)}
     <section class="m-section-card">
       ${nav}
       ${monthItems.length ? `<ul class="m-cal-list">${monthItems.map(calListRow).join('')}</ul>` : `<p class="m-empty">Nothing scheduled in ${MONTHS[state.month]}.</p>`}
     </section>`;
   }
-  return `${heading('Calendar', 'Meetings, events, and deadlines in one place.', toggle)}
+  return `${heading('Calendar', intro('calendar'), toggle)}
   <section class="m-section-card">
     ${nav}
     ${calendarGridHTML()}
@@ -699,7 +813,7 @@ function showCalDayPopover(ds, cell) {
 function renderForms() {
   const forms = D().forms || [];
   const cards = (quizVisible() ? quizCard() : '') + forms.map(formCard).join('');
-  return `${heading('Forms', 'Google Forms from the chapter.')}
+  return `${heading('Forms', intro('forms'))}
   <section class="m-section-card">
     ${cards ? `<div class="m-res-grid">${cards}</div>` : '<div class="empty-state"><h2>No forms right now.</h2></div>'}
   </section>`;
@@ -737,7 +851,7 @@ function quizCard() {
       <span class="res-kicker">Competitive events</span>
       <h2 class="res-title">Event Recommendation Quiz</h2>
       <p class="res-desc">Answer 19 questions about how you like to work and what interests you, and get competitive events that may fit you.</p>
-      <div class="res-foot"><span class="res-open">Take the quiz →</span></div>
+      <div class="res-foot"><span class="res-open">Take the quiz</span></div>
     </div>
   </a>`;
 }
@@ -786,7 +900,7 @@ function renderEventQuiz() {
     </fieldset>
     <div class="quiz-nav">
       <button class="button secondary" type="button" data-action="quiz-back">${n === 1 ? 'Back to instructions' : '← Back'}</button>
-      <button class="button" type="button" data-action="quiz-next" ${chosen === undefined ? 'disabled' : ''}>${n === total ? 'See my events' : 'Next →'}</button>
+      <button class="button" type="button" data-action="quiz-next" ${chosen === undefined ? 'disabled' : ''}>${n === total ? 'See my events' : 'Next'}</button>
     </div>
   </section>`;
 }
@@ -1189,7 +1303,7 @@ function renderUpdates() {
   const cats = ['All', ...new Set(all.map(a => a.category || 'Chapter news'))];
   if (!cats.includes(state.updateFilter)) state.updateFilter = 'All';
   const list = all.filter(a => state.updateFilter === 'All' || (a.category || 'Chapter news') === state.updateFilter);
-  return `${heading('Announcements', 'The latest from your chapter, pinned items first.')}
+  return `${heading('Announcements', intro('updates'))}
   ${cats.length > 2 ? `<div class="page-toolbar">${tabs(cats, state.updateFilter, 'update-filter', 'Announcement category')}</div>` : ''}
   <div class="updates-page">${list.map(a => `
     <section class="m-section-card ${a.pinned ? 'm-pinned' : ''}">
@@ -1210,7 +1324,7 @@ function resourceResults() {
     : '<div class="empty-state"><h2>No meeting materials yet.</h2></div>');
 }
 function renderResources() {
-  return `${heading('Meeting Resources', 'Agendas, slide decks, and materials from chapter meetings.')}
+  return `${heading('Meeting slides', intro('resources'))}
   <section class="m-section-card">
     <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="resource-search" type="search" placeholder="Search meeting resources" value="${esc(state.resourceQuery)}" aria-label="Search meeting resources" /></label></div>
     <div class="m-res-grid" id="resource-results">${resourceResults()}</div>
@@ -1462,11 +1576,11 @@ function linkResults() {
 function renderPrep() {
   const links = state.prepTab === 'links';
   loadEventGuide();
-  const head = heading('Study &amp; Prep', '');
+  const head = heading('Study &amp; Prep', intro('prep'));
   if (!links && state.prepEvent) return `${head}<section class="m-section-card ev-page">${renderEventPage(state.prepEvent)}</section>`;
   return `${head}
   <section class="m-section-card">
-    ${quizVisible() ? '<p class="quiz-pointer">Not sure which event to pick? <a href="#event-quiz">Take the Event Recommendation Quiz →</a></p>' : ''}
+    ${quizVisible() ? '<p class="quiz-pointer">Not sure which event to pick? <a href="#event-quiz">Take the Event Recommendation Quiz</a></p>' : ''}
     <div class="prep-tabs" role="navigation" aria-label="Study & Prep">
       <a href="#prep" class="prep-tab ${links ? '' : 'is-on'}" ${links ? '' : 'aria-current="page"'}>Events</a>
       <a href="#prep/links" class="prep-tab ${links ? 'is-on' : ''}" ${links ? 'aria-current="page"' : ''}>Links</a>
@@ -1549,7 +1663,7 @@ function buddyCards() {
     </article>`).join('');
 }
 function renderBuddies() {
-  const top = heading('Buddy System', '');
+  const top = heading('Buddy System', intro('buddies'));
   if (!buddyVisible() || !D().buddy) {
     return `${top}<section class="m-section-card"><div class="empty-state"><h2>The Buddy System isn't up yet.</h2><p>Officers will post the buddy groups here.</p></div></section>`;
   }
@@ -1581,7 +1695,7 @@ function generalResults() {
     : '<div class="empty-state"><h2>No general resources yet.</h2></div>');
 }
 function renderGeneral() {
-  return `${heading('General Resources', 'Chapter guides, links, and other useful materials.')}
+  return `${heading('General resources', intro('general'))}
   <section class="m-section-card">
     <div class="page-toolbar"><label class="input-wrap">${icon('search')}<input id="general-search" type="search" placeholder="Search general resources" value="${esc(state.generalQuery)}" aria-label="Search general resources" /></label></div>
     <div class="m-res-grid" id="general-results">${generalResults()}</div>
@@ -1686,7 +1800,18 @@ function applyBranding() {
   const name = chapterName();
   document.querySelectorAll('[data-brand-name]').forEach(el => { el.textContent = name; });
   const hero = $('#about-hero-title'); if (hero) hero.textContent = name;
+  // Footer text and Instagram link (Customization > Home Page).
+  const blurb = $('#footer-blurb'); if (blurb) blurb.textContent = homePageCfg().footer || '';
+  const ig = $('#footer-instagram');
+  if (ig) {
+    const url = instagramUrl();
+    ig.hidden = !url;
+    if (url) { ig.href = url; ig.firstChild.textContent = `Instagram ${instagramHandle(url)}`.trim(); }
+  }
 }
+function instagramUrl() { const v = homePageCfg(); return 'instagram' in v ? v.instagram : HOME_DEFAULTS.instagram; }
+// "https://www.instagram.com/statehighfbla/" -> "@statehighfbla"
+function instagramHandle(url) { const m = /instagram\.com\/([A-Za-z0-9_.]+)/i.exec(url || ''); return m ? '@' + m[1] : ''; }
 
 // ---------- dialog ----------
 const dialog = $('#dialog');
@@ -1732,7 +1857,7 @@ function showItem(key) {
   const ev = (c.source === 'event' || c.source === 'payment') ? eventById(c.id) : null;
   const meta = kindMeta(c.kind);
   const description = c.source === 'payment' && ev ? ev.description : c.description;
-  openDialog(`CHAPTER CALENDAR · ${esc(meta.label.toUpperCase())}`, esc(c.title), `
+  openDialog(`${esc(meta.label)}`, esc(c.title), `
     ${description ? `<p class="dialog-lead">${esc(description)}</p>` : ''}
     <dl class="dialog-facts">
       <div><dt>Date</dt><dd>${esc(dateLabel(c.date))}${c.end_date ? ` to ${esc(dateLabel(c.end_date))}` : ''}</dd></div>
@@ -1752,14 +1877,14 @@ function showEvent(id) {
   if (!ev) return;
   const item = calendarItems().find(c => c.source === 'event' && c.id === ev.id);
   if (item) { showItem(item.key); return; }
-  openDialog('CHAPTER EVENT', esc(ev.name), `${ev.description ? `<p class="dialog-lead">${esc(ev.description)}</p>` : ''}<dl class="dialog-facts">${paymentFacts(ev)}</dl>`);
+  openDialog('Event', esc(ev.name), `${ev.description ? `<p class="dialog-lead">${esc(ev.description)}</p>` : ''}<dl class="dialog-facts">${paymentFacts(ev)}</dl>`);
 }
 function showUpdate(id) {
   const a = (D().announcements || []).find(x => x.id === Number(id));
   if (!a) return;
-  openDialog(`${esc((a.category || 'Chapter news').toUpperCase())} · ${esc(postedLabel(a.created_at))}`, esc(a.title), `
+  openDialog(`${esc(a.category || 'Chapter news')}, ${esc(postedLabel(a.created_at))}`, esc(a.title), `
     ${a.body ? `<p class="dialog-lead" style="white-space:pre-wrap">${esc(a.body)}</p>` : ''}
-    <div class="dialog-actions"><button class="button secondary" data-action="dialog-route" data-value="updates" type="button">All announcements ${icon('arrow')}</button></div>`);
+    <div class="dialog-actions"><button class="button secondary" data-action="dialog-route" data-value="updates" type="button">All announcements</button></div>`);
 }
 // The "Need help?" card: the advisor and the officer team with their emails,
 // so a visitor knows who to find at a meeting or write to.
@@ -1772,7 +1897,7 @@ function showOfficers() {
     </li>`;
   const advisors = team.filter(o => o.role === 'advisor');
   const officers = team.filter(o => o.role !== 'advisor');
-  openDialog('NEED HELP?', 'Officers and advisors', team.length ? `
+  openDialog('', 'Who to ask', team.length ? `
     ${advisors.length ? `<h3 class="help-group">${advisors.length === 1 ? 'Advisor' : 'Advisors'}</h3><ul class="help-list">${advisors.map(row).join('')}</ul>` : ''}
     ${officers.length ? `<h3 class="help-group">Officers</h3><ul class="help-list">${officers.map(row).join('')}</ul>` : ''}` : '<p>The officer list will be posted here soon.</p>');
 }
@@ -1780,10 +1905,10 @@ function showNotifications() {
   const seen = store.get('fbla_hub_seen') === null ? new Set(updateKeys()) : seenSet();
   const anns = (D().announcements || []).slice(0, 6);
   const newForms = (D().forms || []).filter(f => !seen.has('f' + f.id));
-  openDialog('CHAPTER UPDATES', 'The latest from the chapter.', `
+  openDialog('', 'What\'s new', `
     ${newForms.length ? `<p>New ${newForms.length === 1 ? 'form' : 'forms'} to look at:</p><div class="m-resource-list">${newForms.slice(0, 4).map(formRow).join('')}</div>` : ''}
     ${anns.length ? `<div class="updates-list">${anns.map(updateRow).join('')}</div>` : '<p>No announcements yet.</p>'}
-    <div class="dialog-actions"><button class="button secondary" data-action="dialog-route" data-value="updates" type="button">All announcements ${icon('arrow')}</button></div>`);
+    <div class="dialog-actions"><button class="button secondary" data-action="dialog-route" data-value="updates" type="button">All announcements</button></div>`);
   markUpdatesSeen();
 }
 
@@ -2029,6 +2154,11 @@ document.addEventListener('click', (event) => {
   if (!event.target.closest('.m-search') && !event.target.closest('#hub-search-results')) hideHubSearch();
   // Any tap outside the More menu (or on one of its items) closes it.
   if (!event.target.closest('#mobile-more') && (!event.target.closest('#m-more-menu') || event.target.closest('#m-more-menu a, #m-more-menu button'))) closeMoreMenu();
+  // The header's Menu panel and Resources drop-down close on any other tap.
+  if (!event.target.closest('#site-menu-btn') && (!event.target.closest('#site-menu') || event.target.closest('#site-menu a'))) toggleSiteMenu(false);
+  document.querySelectorAll('.site-nav-drop.is-open').forEach(d => {
+    if (!d.contains(event.target) || event.target.closest('.site-drop-panel a')) { d.classList.remove('is-open'); d.querySelector('button').setAttribute('aria-expanded', 'false'); }
+  });
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const { action, id, value } = button.dataset;
@@ -2044,6 +2174,14 @@ document.addEventListener('click', (event) => {
       break;
     }
     case 'more-menu': if ($('#m-more-menu').hidden) openMoreMenu(); else closeMoreMenu(true); break;
+    case 'site-menu': toggleSiteMenu(); break;
+    case 'res-menu': {
+      const drop = button.closest('.site-nav-drop');
+      const open = !drop.classList.contains('is-open');
+      drop.classList.toggle('is-open', open);
+      button.setAttribute('aria-expanded', String(open));
+      break;
+    }
     case 'menu-close': closeMenu(); { const more = $('#mobile-more'); if (more) more.focus(); } break;
     case 'sidebar-toggle': {
       const collapsed = $('#chapter-app').classList.toggle('nav-collapsed');

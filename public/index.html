@@ -12,11 +12,11 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=108" />
-  <link rel="stylesheet" href="hub.css?v=128" />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=110" />
+  <link rel="stylesheet" href="hub.css?v=133" />
   <script src="event-quiz.js?v=1" defer></script>
-  <script src="hub.js?v=136" defer></script>
+  <script src="hub.js?v=142" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
@@ -35,34 +35,73 @@
     <div id="navigation"></div>
     <div class="m-sidebar-bottom">
       <button class="m-help-card" type="button" data-action="officers" aria-haspopup="dialog">
-        <strong>Need help?</strong>
-        <p>Questions about an event or a resource? See who to ask.</p>
+        <strong>Questions?</strong>
+        <p>See the officers and how to reach them.</p>
       </button>
       <div class="m-profile-mini">
-        <a class="officer-link" href="https://www.instagram.com/statehighfbla/" target="_blank" rel="noopener"><span data-icon="instagram"></span><span>@statehighfbla</span><span aria-hidden="true">↗</span></a>
-        <button class="officer-link" data-action="officer-login" type="button"><span data-icon="lock"></span><span>Officer sign in</span><span aria-hidden="true">→</span></button>
+        <a class="officer-link" href="https://www.instagram.com/statehighfbla/" target="_blank" rel="noopener"><span data-icon="instagram"></span><span>@statehighfbla</span></a>
+        <button class="officer-link" data-action="officer-login" type="button"><span data-icon="lock"></span><span>Officer sign in</span></button>
       </div>
     </div>
   </aside>
   <button class="nav-scrim" data-action="menu-close" type="button" aria-label="Close navigation" hidden></button>
 
   <div class="m-main">
-    <header class="m-topbar">
-      <div class="m-crumb"><a href="#home" class="m-crumb-home" data-brand-name>State High FBLA</a><span aria-hidden="true">/</span><b id="breadcrumb">Home</b></div>
-      <div class="m-top-actions">
-        <label class="m-search">
-          <span data-icon="search"></span>
-          <input id="hub-search" type="search" placeholder="Search" aria-label="Search the site" autocomplete="off" aria-controls="hub-search-results" aria-expanded="false" />
-        </label>
-        <button class="m-icon-btn" data-action="notifications" type="button" aria-label="Chapter updates">
-          <span class="m-alert-dot" id="bell-dot" hidden></span><span data-icon="bell"></span>
-        </button>
+    <header class="site-header">
+      <div class="site-header-inner">
+        <a class="site-brand" href="#home" aria-label="State High FBLA home">
+          <img src="FBLALogo.png" alt="" class="site-brand-logo" onerror="this.style.display='none'" />
+          <span class="site-brand-copy"><strong data-brand-name>State High FBLA</strong><small>Future Business Leaders of America</small></span>
+        </a>
+        <nav class="site-nav" id="topnav" aria-label="Main"></nav>
+        <div class="site-actions">
+          <label class="m-search">
+            <span data-icon="search"></span>
+            <input id="hub-search" type="search" placeholder="Search" aria-label="Search the site" autocomplete="off" aria-controls="hub-search-results" aria-expanded="false" />
+          </label>
+          <button class="m-icon-btn" data-action="notifications" type="button" aria-label="What's new">
+            <span class="m-alert-dot" id="bell-dot" hidden></span><span data-icon="bell"></span>
+          </button>
+          <button class="site-officer" data-action="officer-login" type="button" title="Officer sign in"><span data-icon="lock"></span><span class="site-officer-text">Officer sign in</span></button>
+          <button class="m-icon-btn site-menu-btn" id="site-menu-btn" data-action="site-menu" type="button" aria-label="Menu" aria-expanded="false" aria-controls="site-menu"><span data-icon="menu"></span></button>
+        </div>
       </div>
+      <div class="site-menu" id="site-menu" hidden></div>
+      <b id="breadcrumb" hidden>Home</b>
     </header>
     <div class="m-search-results" id="hub-search-results" hidden></div>
     <main id="main" class="m-tab" tabindex="-1" aria-live="polite" aria-busy="true">
       <div class="hub-loading">Loading…</div>
     </main>
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <div class="site-footer-brand">
+          <img src="FBLALogo.png" alt="" onerror="this.style.display='none'" />
+          <div>
+            <strong data-brand-name>State High FBLA</strong>
+            <p id="footer-blurb">Meetings, competitive events, and everything you need to get ready for them.</p>
+          </div>
+        </div>
+        <div class="site-footer-col">
+          <h2>Chapter</h2>
+          <a href="#calendar">Calendar</a>
+          <a href="#updates">Announcements</a>
+          <a href="/about" data-action="about">About the chapter</a>
+        </div>
+        <div class="site-footer-col">
+          <h2>Prepare</h2>
+          <a href="#prep">Study &amp; Prep</a>
+          <a href="#resources">Meeting slides</a>
+          <a href="#general">General resources</a>
+        </div>
+        <div class="site-footer-col">
+          <h2>Get in touch</h2>
+          <button type="button" data-action="officers">Officers and advisors</button>
+          <a id="footer-instagram" href="https://www.instagram.com/statehighfbla/" target="_blank" rel="noopener">Instagram @statehighfbla<span class="sr-only"> (opens in a new tab)</span></a>
+          <button type="button" data-action="officer-login">Officer sign in</button>
+        </div>
+      </div>
+    </footer>
   </div>
 
   <nav class="m-mobile-nav" id="mobile-navigation" aria-label="Chapter mobile navigation"></nav>

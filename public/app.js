@@ -2693,9 +2693,10 @@ function renderCustomization() {
   el.innerHTML = `
     <h2>Customization</h2>
     <p class="hint">Change what the public hub shows, no code needed. Any officer can edit this.</p>
+    ${homePagePanelHtml(cfg.home_page || { hero: { title: '', text: '', photo: 'builtin:states-winners', buttons: [{ label: '', link: '' }, { label: '', link: '' }] }, boxes: [0, 1, 2].map(() => ({ title: '', text: '', button: '', link: '', photo: 'builtin:states-winners' })) })}
     <div class="panel">
       <h3>Home Card</h3>
-      <p style="color:var(--muted)">The big blue card on the hub's home page. Leave it blank and the hub shows the next date on the chapter calendar instead.</p>
+      <p style="color:var(--muted)">The white card on the home page photo. Leave it blank and it shows the next meeting (or the next date on the chapter calendar) with a countdown.</p>
       <div class="form-row"><label>Title</label><input id="cz-card-title" maxlength="90" value="${esc(cfg.home_card_title || '')}" placeholder="e.g. Join us for our first meeting!" /></div>
       <div class="form-row"><label>Subtext</label><textarea id="cz-card-desc" rows="3" maxlength="400" placeholder="e.g. Our first meeting is Thursday at 8:00 in LGI B229. Everyone is welcome.">${esc(cfg.home_card_desc || '')}</textarea></div>
       <div class="form-row"><label>Button text (optional)</label><input id="cz-card-button" maxlength="40" value="${esc(cfg.home_card_button || '')}" placeholder="e.g. See the calendar" /></div>
@@ -2704,7 +2705,7 @@ function renderCustomization() {
     </div>
     <div class="panel">
       <h3>Home Card Queue</h3>
-      <p style="color:var(--muted)">Line up calendar dates for the blue card. It counts down to the first one, and the moment that date starts it moves on to the next, with its own countdown. All-day dates stay up until their day is over. Changes save as you make them. When the queue runs out, the card goes back to showing the next meeting.${(cfg.home_card_title || cfg.home_card_desc) ? ' <strong>The Home Card message above is set, so it shows instead of the queue until you clear it.</strong>' : ''}</p>
+      <p style="color:var(--muted)">Line up calendar dates for the home card. It counts down to the first one, and the moment that date starts it moves on to the next, with its own countdown. All-day dates stay up until their day is over. Changes save as you make them. When the queue runs out, the card goes back to showing the next meeting.${(cfg.home_card_title || cfg.home_card_desc) ? ' <strong>The Home Card message above is set, so it shows instead of the queue until you clear it.</strong>' : ''}</p>
       <div id="cz-queue"></div>
     </div>
     <div class="panel">
@@ -2732,6 +2733,188 @@ function renderCustomization() {
     </div>`;
   renderCardQueue();
 }
+
+// ----- Home Page (photo hero + the three boxes under it) -----
+// Saved as one setting (home_page); the server cleans it (db.homePage).
+const HOME_PHOTO_CHOICES = [
+  ['states-winners', 'States: award winners with plaques'],
+  ['states-hershey', 'States: whole chapter in Hershey'],
+  ['states-stage', 'States: the Giant Center stage'],
+  ['nationals-conference', 'Nationals: welcome sign group photo'],
+  ['nationals-delegation', 'Nationals: delegation outside'],
+  ['regionals-awards', 'Regionals: certificates'],
+  ['regionals-room', 'Regionals: conference room'],
+  ['regionals-speaker', 'Regionals: speaker'],
+];
+const HOME_LINK_CHOICES = [
+  ['calendar', 'Calendar'], ['signup', 'Event Sign-Up'], ['forms', 'Forms'], ['updates', 'Announcements'],
+  ['buddies', 'Buddy System'], ['resources', 'Meeting slides'], ['prep', 'Study & Prep'], ['general', 'General resources'],
+  ['event-quiz', 'Event quiz'], ['about', 'About the chapter'], ['officers', 'Officers and advisors (pop-up)'],
+];
+const HOME_INTRO_PAGES = [['calendar', 'Calendar'], ['forms', 'Forms'], ['updates', 'Announcements'], ['resources', 'Meeting slides'], ['prep', 'Study & Prep'], ['general', 'General resources'], ['buddies', 'Buddy System']];
+let pendingHomePhotos = {};
+function homePhotoSrc(photo, slot) {
+  const p = String(photo || '');
+  if (p.startsWith('upload:')) return `/api/public/home-photo/${slot}?v=${encodeURIComponent(p.slice(7))}`;
+  return `about-images/${p.startsWith('builtin:') ? p.slice(8) : 'states-winners'}.webp`;
+}
+function homePhotoField(slot, photo) {
+  const isUpload = String(photo || '').startsWith('upload:');
+  return `<div class="form-row hp-photo-row"><label>Photo</label>
+    <div class="hp-photo">
+      <img id="hp-${slot}-preview" class="hp-preview" src="${esc(homePhotoSrc(photo, slot))}" alt="" />
+      <div class="hp-photo-pick">
+        <select id="hp-${slot}-photo" data-current="${esc(photo || '')}" onchange="homePhotoChoice('${slot}')">
+          ${HOME_PHOTO_CHOICES.map(([v, l]) => `<option value="builtin:${v}" ${photo === 'builtin:' + v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+          <option value="upload" ${isUpload ? 'selected' : ''}>Your own photo</option>
+        </select>
+        <input id="hp-${slot}-file" type="file" accept="image/png,image/jpeg,image/webp" class="${isUpload ? '' : 'hidden'}" onchange="homePhotoFile('${slot}')" />
+      </div>
+    </div></div>`;
+}
+function homeLinkField(id, link, label = 'Goes to') {
+  const page = HOME_LINK_CHOICES.some(([v]) => v === link);
+  const other = !!link && !page;
+  return `<div class="form-row"><label>${label}</label>
+    <div class="hp-link">
+      <select id="${id}-page" onchange="$('#${id}-url').classList.toggle('hidden', this.value !== 'url')">
+        ${HOME_LINK_CHOICES.map(([v, l]) => `<option value="${v}" ${link === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+        <option value="url" ${other ? 'selected' : ''}>Another website...</option>
+      </select>
+      <input id="${id}-url" class="${other ? '' : 'hidden'}" maxlength="300" placeholder="https://..." value="${other ? esc(link) : ''}" />
+    </div></div>`;
+}
+function homePagePanelHtml(hp) {
+  const h = hp.hero;
+  const box = (b, i) => `
+    <fieldset class="hp-box">
+      <legend>Box ${i + 1}</legend>
+      <div class="form-row"><label>Title</label><input id="hp-b${i}-title" maxlength="60" value="${esc(b.title)}" placeholder="Leave blank to hide this box" /></div>
+      <div class="form-row"><label>Text</label><textarea id="hp-b${i}-text" rows="2" maxlength="180">${esc(b.text)}</textarea></div>
+      <div class="form-row"><label>Link text</label><input id="hp-b${i}-button" maxlength="30" value="${esc(b.button)}" placeholder="e.g. Start studying" /></div>
+      ${homeLinkField(`hp-b${i}-link`, b.link)}
+      ${homePhotoField(`box${i + 1}`, b.photo)}
+    </fieldset>`;
+  return `
+    <div class="panel">
+      <h3>Home Page and Site Text</h3>
+      <p style="color:var(--muted)">The photo at the top of the site's home page, the three boxes under it, the footer, and the line under each page's title. A box or button that points to a page that's turned off (Event Sign-Up, Buddy System, the event quiz) hides itself until that page is back.</p>
+      <fieldset class="hp-box">
+        <legend>Top photo</legend>
+        <div class="form-row"><label>Heading</label><input id="hp-hero-title" maxlength="80" value="${esc(h.title)}" placeholder="${esc(chapterName())}" /></div>
+        <div class="form-row"><label>Text</label><textarea id="hp-hero-text" rows="2" maxlength="220">${esc(h.text)}</textarea></div>
+        ${homePhotoField('hero', h.photo)}
+        <div class="form-row"><label>Gold button</label><input id="hp-btn0-label" maxlength="40" value="${esc(h.buttons[0].label)}" placeholder="Leave blank for no button" /></div>
+        ${homeLinkField('hp-btn0-link', h.buttons[0].link)}
+        <div class="form-row"><label>Second button</label><input id="hp-btn1-label" maxlength="40" value="${esc(h.buttons[1].label)}" placeholder="Leave blank for no button" /></div>
+        ${homeLinkField('hp-btn1-link', h.buttons[1].link)}
+      </fieldset>
+      ${hp.boxes.map(box).join('')}
+      <fieldset class="hp-box">
+        <legend>Site text</legend>
+        <div class="form-row"><label>Footer text</label><textarea id="hp-footer" rows="2" maxlength="200">${esc(hp.footer || '')}</textarea></div>
+        <div class="form-row"><label>Instagram link</label><input id="hp-instagram" maxlength="200" value="${esc(hp.instagram || '')}" placeholder="https://www.instagram.com/... (blank hides it)" /></div>
+        <p class="hint" style="margin:12px 0 0;">The line under each page's title. Leave one blank for no line.</p>
+        ${HOME_INTRO_PAGES.map(([k, l]) => `<div class="form-row"><label>${esc(l)}</label><input id="hp-intro-${k}" maxlength="200" value="${esc((hp.intros || {})[k] || '')}" /></div>`).join('')}
+      </fieldset>
+      <div class="settings-row" style="gap:8px;">
+        <button class="btn" id="hp-save" onclick="saveHomePage()">Save Home Page</button>
+        <button class="btn secondary" onclick="resetHomePage()">Go back to the original</button>
+        <a class="btn secondary" href="/#home" target="_blank" rel="noopener">View the home page</a>
+      </div>
+    </div>`;
+}
+window.homePhotoChoice = function(slot) {
+  const sel = $(`#hp-${slot}-photo`);
+  const file = $(`#hp-${slot}-file`);
+  const prev = $(`#hp-${slot}-preview`);
+  if (sel.value === 'upload') {
+    file.classList.remove('hidden');
+    const cur = sel.dataset.current || '';
+    if (pendingHomePhotos[slot]) prev.src = pendingHomePhotos[slot];
+    else if (cur.startsWith('upload:')) prev.src = homePhotoSrc(cur, slot);
+    else file.click();
+  } else {
+    file.classList.add('hidden');
+    prev.src = homePhotoSrc(sel.value, slot);
+  }
+};
+window.homePhotoFile = async function(slot) {
+  const input = $(`#hp-${slot}-file`);
+  const f = input.files && input.files[0];
+  if (!f) return;
+  try {
+    // The top photo fills the width of the page, so it keeps more pixels.
+    pendingHomePhotos[slot] = await shrinkImage(f, slot === 'hero' ? 1800 : 1000);
+    $(`#hp-${slot}-preview`).src = pendingHomePhotos[slot];
+    $(`#hp-${slot}-photo`).value = 'upload';
+  } catch (e) {
+    input.value = '';
+    alert(e.message);
+  }
+};
+// Upload a new photo if one was picked; otherwise keep what's chosen.
+async function homePhotoValue(slot) {
+  const sel = $(`#hp-${slot}-photo`);
+  if (sel.value !== 'upload') return sel.value;
+  if (pendingHomePhotos[slot]) {
+    const r = await api('PUT', `/api/home-photos/${slot}`, { image: pendingHomePhotos[slot] });
+    delete pendingHomePhotos[slot];
+    return `upload:${r.updated_at}`;
+  }
+  const cur = sel.dataset.current || '';
+  if (cur.startsWith('upload:')) return cur;
+  throw new Error(`Choose a photo file for ${slot === 'hero' ? 'the top photo' : 'box ' + slot.slice(3)}, or pick one of the chapter photos.`);
+}
+const homeLinkValue = (id) => ($(`#${id}-page`).value === 'url' ? $(`#${id}-url`).value.trim() : $(`#${id}-page`).value);
+window.saveHomePage = async function() {
+  const btn = $('#hp-save');
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = 'Saving...';
+  try {
+    for (const id of ['hp-btn0-link', 'hp-btn1-link', 'hp-b0-link', 'hp-b1-link', 'hp-b2-link']) {
+      const v = homeLinkValue(id);
+      if ($(`#${id}-page`).value === 'url' && !/^https?:\/\/\S+$/i.test(v)) throw new Error('Website links need to start with https://');
+    }
+    const home_page = {
+      hero: {
+        title: $('#hp-hero-title').value,
+        text: $('#hp-hero-text').value,
+        photo: await homePhotoValue('hero'),
+        buttons: [0, 1].map(i => ({ label: $(`#hp-btn${i}-label`).value, link: homeLinkValue(`hp-btn${i}-link`) })),
+      },
+      boxes: [],
+      footer: $('#hp-footer').value,
+      instagram: $('#hp-instagram').value.trim(),
+      intros: Object.fromEntries(HOME_INTRO_PAGES.map(([k]) => [k, $(`#hp-intro-${k}`).value])),
+    };
+    if (home_page.instagram && !/^https?:\/\/\S+$/i.test(home_page.instagram)) throw new Error('The Instagram link needs to start with https://');
+    for (let i = 0; i < 3; i++) {
+      home_page.boxes.push({
+        title: $(`#hp-b${i}-title`).value,
+        text: $(`#hp-b${i}-text`).value,
+        button: $(`#hp-b${i}-button`).value,
+        link: homeLinkValue(`hp-b${i}-link`),
+        photo: await homePhotoValue(`box${i + 1}`),
+      });
+    }
+    await api('PUT', '/api/settings/customization', { home_page });
+    await loadAll(); render();
+    alert('Home page saved. It shows on the site within about 15 seconds.');
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    const b = $('#hp-save');
+    if (b) { b.disabled = false; b.textContent = label; }
+  }
+};
+window.resetHomePage = async function() {
+  if (!confirm('Put the home page photo, buttons, and boxes back to the original? Your changes here will be lost.')) return;
+  await api('PUT', '/api/settings/customization', { home_page: null });
+  pendingHomePhotos = {};
+  await loadAll(); render();
+};
 
 // ----- Home Card Queue (every change saves right away) -----
 let czQueue = null;
@@ -3195,7 +3378,7 @@ function coverFieldHtml(existingSrc) {
       <img id="sl-cover-preview" class="res-cover-preview ${existingSrc ? '' : 'hidden'}" src="${existingSrc || ''}" alt="Cover preview" />
     </div>`;
 }
-function shrinkImage(file) {
+function shrinkImage(file, maxSide = 960) {
   return new Promise((resolve, reject) => {
     if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { reject(new Error('Pick a PNG, JPEG, or WebP image.')); return; }
     const reader = new FileReader();
@@ -3204,7 +3387,7 @@ function shrinkImage(file) {
       const img = new Image();
       img.onerror = () => reject(new Error('That file is not an image the browser can open.'));
       img.onload = () => {
-        const scale = Math.min(1, 960 / Math.max(img.width, img.height));
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
         const canvas = document.createElement('canvas');
         canvas.width = Math.max(1, Math.round(img.width * scale));
         canvas.height = Math.max(1, Math.round(img.height * scale));
