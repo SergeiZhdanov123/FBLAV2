@@ -935,12 +935,7 @@ const pointsLookupLimiter = rateLimit(3000, 10 * 60 * 1000);
 app.post('/api/public/points/lookup', pointsLookupLimiter, sh(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   if (!(await pointsVisible())) return res.status(404).json({ found: false, error: "Points aren't available right now." });
-  const out = await signup.lookupPoints((req.body || {}).name);
-  if (out.found) {
-    const officers = await officerNames();
-    if (officers.has(signup.normName(out.name)) || officers.has(signup.normName((req.body || {}).name))) return res.json({ found: true, name: out.name, officer: true });
-  }
-  res.json(out);
+  res.json(await signup.lookupPoints((req.body || {}).name, await officerNames()));
 }));
 // Officers show or hide the whole Points page (Points tab).
 app.patch('/api/points/visibility', requireOfficer, ah(async (req, res) => {

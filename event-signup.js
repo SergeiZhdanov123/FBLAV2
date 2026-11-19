@@ -485,7 +485,28 @@ async function codeAccepted(code) {
 
 // Public: one member's points by their FULL name. Returns only that
 // member's name and points (no list, no suggestions).
-async function lookupPoints(name) {
+// A member's place in the points standings. Officers don't count, and a
+// second entry for the same person (same first name, last name and points,
+// e.g. with and without a middle name) is counted once. Ties share a place.
+function nameKeys(m) {
+  const last = normName(m.last_name);
+  return [`${normName(m.first_name)} ${last}`, m.preferred_name ? `${normName(m.preferred_name)} ${last}` : null].filter(Boolean);
+}
+function pointsRank(member, roster, officers) {
+  if (!member || typeof member.points !== 'number') return null;
+  const isOfficer = (m) => !!officers && nameKeys(m).some(k => officers.has(k));
+  const person = (m) => `${normName(m.first_name).split(' ')[0]} ${normName(m.last_name).split(' ').pop()}|${m.points}`;
+  const pool = new Map();
+  for (const m of roster || []) if (typeof m.points === 'number' && !isOfficer(m)) pool.set(person(m), m.points);
+  pool.set(person(member), member.points);
+  const pts = [...pool.values()];
+  return {
+    rank: 1 + pts.filter(p => p > member.points).length,
+    tied: pts.filter(p => p === member.points).length > 1,
+    of: pts.length,
+  };
+}
+async function lookupPoints(name, officers) {
   const typed = String(name || '').slice(0, 120);
   if (normName(typed).split(' ').filter(Boolean).length < 2) return { found: false, error: 'Type your first and last name.' };
   const { d } = await mdb();
@@ -494,7 +515,9 @@ async function lookupPoints(name) {
   if (!hits.length) return { found: false, error: `We couldn't find "${tidyName(typed)}". Type your first and last name the way it is on the chapter's FBLA member list.` };
   if (hits.length > 1) return { found: false, error: 'More than one member has that name. Ask an officer for your points.' };
   const m = hits[0];
-  return { found: true, name: fullName(m), points: m.points === undefined ? null : m.points };
+  if (officers && nameKeys(m).some(k => officers.has(k))) return { found: true, name: fullName(m), officer: true };
+  const place = pointsRank(m, roster, officers);
+  return { found: true, name: fullName(m), points: m.points === undefined ? null : m.points, ...(place || {}) };
 }
 
 // Check one typed name for the public form (live feedback before submitting).
@@ -776,7 +799,7 @@ async function signupsXlsx() {
 const dropping = (fn) => async (...args) => { try { return await fn(...args); } finally { dropCaches(); } };
 module.exports = {
   SignupError, normName, tidyName, resolveName, parseRosterText, cleanEvent, cleanMember,
-  cleanPoints, membersByFullName, lookupPoints, setRosterPoints: dropping(setRosterPoints),
+  cleanPoints, membersByFullName, pointsRank, lookupPoints, setRosterPoints: dropping(setRosterPoints),
   listRoster, addRosterMembers: dropping(addRosterMembers), updateRosterMember: dropping(updateRosterMember),
   deleteRosterMember: dropping(deleteRosterMember), clearRoster: dropping(clearRoster),
   listEvents, addEvent: dropping(addEvent), updateEvent: dropping(updateEvent), deleteEvent: dropping(deleteEvent),

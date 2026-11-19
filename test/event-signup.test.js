@@ -51,6 +51,30 @@ test('points lookup: full name only, no partial names', () => {
   assert.equal(su.cleanPoints('2000000'), undefined);
 });
 
+test('points rank: ties share a place, officers and duplicate entries do not count', () => {
+  const roster = [
+    { id: 1, first_name: 'Max', last_name: 'Cole', points: 66 },
+    { id: 2, first_name: 'Ana', last_name: 'Ma', points: 52 },
+    { id: 3, first_name: 'Ola', last_name: 'Reed', points: 70 }, // officer
+    { id: 4, first_name: 'Sydney', last_name: 'Dunn', points: 17 },
+    { id: 5, first_name: 'Vera', last_name: 'West', points: 17 },
+    { id: 6, first_name: 'Sophia Maria', last_name: 'Kant', points: 12 },
+    { id: 7, first_name: 'Sophia', last_name: 'Kant', points: 12 }, // same person twice
+    { id: 8, first_name: 'Lee', last_name: 'Fox', points: 10 },
+    { id: 9, first_name: 'Jo', last_name: 'Ray' }, // no points yet
+  ];
+  const officers = new Set(['ola reed']);
+  const r = (id) => su.pointsRank(roster.find(m => m.id === id), roster, officers);
+  assert.deepEqual(r(1), { rank: 1, tied: false, of: 6 });
+  assert.deepEqual(r(4), { rank: 3, tied: true, of: 6 });
+  assert.deepEqual(r(5), { rank: 3, tied: true, of: 6 });
+  assert.deepEqual(r(6), { rank: 5, tied: false, of: 6 });
+  assert.deepEqual(r(7), { rank: 5, tied: false, of: 6 });
+  assert.deepEqual(r(8), { rank: 6, tied: false, of: 6 });
+  assert.equal(r(9), null);
+  assert.deepEqual(su.pointsRank(roster[0], roster, null), { rank: 2, tied: false, of: 7 }, 'without the officer list the officer counts');
+});
+
 test('names: full, reversed, middle, initial, first-only, preferred, accents', () => {
   assert.equal(who('Jane Doe'), 'Jane Doe');
   assert.equal(who('  jane   DOE '), 'Jane Doe');

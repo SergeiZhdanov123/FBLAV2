@@ -617,7 +617,7 @@ function pdfEmbedUrl(url) {
 }
 const pointsText = (n) => (n === null || n === undefined ? '' : `${Number(n).toLocaleString('en-US')} ${n === 1 ? 'point' : 'points'}`);
 const PLACE = ['1st', '2nd', '3rd'];
-const ordinal = (n) => `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;
+const ordinal = (n) => `${n}${[11, 12, 13].includes(n % 100) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
 // One member's own points, by their full name (POST /api/public/points/lookup).
 // Nothing is suggested while typing; only an exact full name finds anyone.
 const ptsLookup = { name: '', busy: false, result: null };
@@ -631,6 +631,9 @@ function ptsLookupResultHtml() {
     ${r.points === null || r.points === undefined
       ? '<span class="pts-lookup-none">No points recorded yet. Turn them in with the points form.</span>'
       : `<strong class="pts-lookup-score">${esc(Number(r.points).toLocaleString('en-US'))}</strong><span class="pts-lookup-unit">${r.points === 1 ? 'point' : 'points'}</span>`}
+    ${Number.isInteger(r.rank) && Number.isInteger(r.of)
+      ? `<span class="pts-lookup-rank">${r.tied ? 'Tied for ' : ''}${ordinal(r.rank)} place out of ${r.of}</span>`
+      : ''}
   </div>`;
 }
 function showPtsLookup() {
@@ -1465,7 +1468,7 @@ let eventGuide = null, eventGuideLoading = false;
 function loadEventGuide() {
   if (eventGuide || eventGuideLoading) return;
   eventGuideLoading = true;
-  fetch('/event-guide.json?v=5').then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+  fetch('/event-guide.json?v=6').then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
     .then(g => { eventGuide = g; })
     .catch(() => { eventGuide = { events: [], failed: true }; })
     .finally(() => { eventGuideLoading = false; if (state.page === 'prep') render(); });
