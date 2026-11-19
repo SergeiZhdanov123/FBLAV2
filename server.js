@@ -94,7 +94,7 @@ app.use((req, res, next) => {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
     "connect-src 'self'",
-    "frame-src https://www.youtube-nocookie.com",
+    "frame-src https://www.youtube-nocookie.com https://drive.google.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -252,10 +252,27 @@ app.use('/api', (req, res, next) => (req.path.startsWith('/public/') ? next() : 
 // officer write, so an edit shows up on the very next load.
 const PUBLIC_CACHE_MS = 15 * 1000;
 let publicCache = null;
+// Whether the Points page is on the site, read briefly cached for the lookup.
+let pointsVisibleCache = null;
+// Officers aren't in the points standings: the lookup says "Officer" for
+// anyone whose name matches an active officer account (briefly cached).
+let officerNamesCache = null;
+async function officerNames() {
+  if (officerNamesCache && Date.now() - officerNamesCache.at < PUBLIC_CACHE_MS) return officerNamesCache.v;
+  const v = new Set((await db.leadershipTeam()).map(o => signup.normName(o.name)).filter(n => n.includes(' ')));
+  officerNamesCache = { at: Date.now(), v };
+  return v;
+}
+async function pointsVisible() {
+  if (pointsVisibleCache && Date.now() - pointsVisibleCache.at < PUBLIC_CACHE_MS) return pointsVisibleCache.v;
+  const v = (await db.getSettings()).points_visible !== '0';
+  pointsVisibleCache = { at: Date.now(), v };
+  return v;
+}
 app.use('/api', (req, res, next) => {
   // Public sign-up POSTs don't change anything the hub bundle shows.
   if (req.method !== 'GET' && !req.path.startsWith('/public/')) {
-    res.on('finish', () => { if (res.statusCode < 400) { publicCache = null; signup.dropCaches(); } });
+    res.on('finish', () => { if (res.statusCode < 400) { publicCache = null; pointsVisibleCache = null; officerNamesCache = null; signup.dropCaches(); } });
   }
   next();
 });
@@ -554,6 +571,12 @@ app.put('/api/settings/customization', requireOfficer, ah(async (req, res) => {
   if (b.home_page !== undefined) {
     await db.setSetting('home_page', b.home_page === null ? '' : JSON.stringify(db.homePage(b.home_page)));
     changed.push(b.home_page === null ? 'home page reset' : 'home page');
+  }
+  if (b.points_page !== undefined) {
+    // Stamp the save date so the public page can say when the leaderboard was updated.
+    const pts = b.points_page === null ? null : { ...db.pointsPage(b.points_page), updated_at: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }) };
+    await db.setSetting('points_page', pts === null ? '' : JSON.stringify(pts));
+    changed.push(b.points_page === null ? 'points page reset' : 'points page');
   }
   if (b.home_card_queue !== undefined) { await db.setSetting('home_card_queue', JSON.stringify(db.homeCardQueue(b.home_card_queue))); changed.push('home card queue'); }
   if (b.chapter_name !== undefined) {
@@ -905,6 +928,27 @@ app.post('/api/public/signup', signupLimiter, sh(async (req, res) => {
   await db.logAudit(out.people[0].name, 'event_signup', `${out.event_name}: ${out.people.map(p => p.name).join(', ')} (from the hub)`);
   res.json(out);
 }));
+// Public: a member looks up their own points by typing their FULL name.
+// Only that one member's name and points come back. Sized like the name
+// check (a whole school shares one Wi-Fi IP).
+const pointsLookupLimiter = rateLimit(3000, 10 * 60 * 1000);
+app.post('/api/public/points/lookup', pointsLookupLimiter, sh(async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  if (!(await pointsVisible())) return res.status(404).json({ found: false, error: "Points aren't available right now." });
+  const out = await signup.lookupPoints((req.body || {}).name);
+  if (out.found) {
+    const officers = await officerNames();
+    if (officers.has(signup.normName(out.name)) || officers.has(signup.normName((req.body || {}).name))) return res.json({ found: true, name: out.name, officer: true });
+  }
+  res.json(out);
+}));
+// Officers show or hide the whole Points page (Points tab).
+app.patch('/api/points/visibility', requireOfficer, ah(async (req, res) => {
+  const visible = !!(req.body || {}).visible;
+  await db.setSetting('points_visible', visible ? '1' : '0');
+  await db.logAudit(req.session.name, 'points_visibility', visible ? 'Points page shown on the site' : 'Points page hidden from the site');
+  res.json({ visible });
+}));
 // Officers
 app.get('/api/signup', requireOfficer, sh(async (req, res) => {
   const [flags, events, signups, roster] = await Promise.all([signup.settingsFlags(), signup.listEvents(), signup.listSignups(), signup.listRoster()]);
@@ -1000,6 +1044,14 @@ app.post('/api/roster/import', requireOfficer, sh(async (req, res) => {
   if (problems.length) return res.status(400).json({ error: `Fix ${problems.length} line${problems.length === 1 ? '' : 's'} first.`, problems });
   const r = await signup.addRosterMembers(rows, req.session.name);
   await db.logAudit(req.session.name, 'roster_import', `Added ${r.added} members${r.skipped.length ? `, ${r.skipped.length} already on the list` : ''}`);
+  res.json(r);
+}));
+// Points for many members at once (FBLA Member List). Before /:id so
+// "points" isn't read as a member id.
+app.put('/api/roster/points', requireOfficer, sh(async (req, res) => {
+  const list = Array.isArray((req.body || {}).points) ? req.body.points : [];
+  const r = await signup.setRosterPoints(list);
+  await db.logAudit(req.session.name, 'roster_points', `Updated points for ${r.saved} member${r.saved === 1 ? '' : 's'}`);
   res.json(r);
 }));
 app.put('/api/roster/:id', requireOfficer, sh(async (req, res) => {

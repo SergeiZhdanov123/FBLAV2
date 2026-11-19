@@ -60,6 +60,7 @@ const NAV = [
   ['resources', 'slides', 'Meeting Resources'],
   ['prep', 'book', 'Study & Prep'],
   ['general', 'folder', 'General Resources'],
+  ['points', 'trophy', 'Points'],
 ];
 // The three kinds of resource officers post, and where each one lives.
 const RESOURCE_KINDS = {
@@ -80,6 +81,9 @@ const signupOpen = () => !!cfg().event_signup_open || !!cfg().event_signup_liste
 const BUDDY_NAV = ['buddies', 'people', 'Buddy System'];
 PAGE_TITLES.buddies = 'Buddy System';
 const buddyVisible = () => !!cfg().buddy_visible;
+// Officers can hide the whole Points page (missing flag = shown).
+const pointsVisible = () => cfg().points_visible !== false;
+const navShown = ([id]) => id !== 'points' || pointsVisible();
 
 const now = new Date();
 const state = {
@@ -376,7 +380,7 @@ function renderNav() {
   // The phone "More" menu (V1's pop-up above the bottom-right corner): the
   // pages that don't fit in the bottom bar, plus help and officer sign-in.
   const moreLink = ([id, ic, title]) => `<a href="#${id}" class="${state.page === id ? 'active' : ''}" ${state.page === id ? 'aria-current="page"' : ''}>${icon(ic)}${esc(title)}</a>`;
-  $('#m-more-menu').innerHTML = (signupOpen() ? moreLink(SIGNUP_NAV) : '') + (buddyVisible() ? moreLink(BUDDY_NAV) : '') + NAV.slice(4).map(moreLink).join('') +
+  $('#m-more-menu').innerHTML = (signupOpen() ? moreLink(SIGNUP_NAV) : '') + (buddyVisible() ? moreLink(BUDDY_NAV) : '') + NAV.slice(4).filter(navShown).map(moreLink).join('') +
     `<a href="/about" data-action="about">${icon('about')}About the Chapter</a>` +
     `<span class="m-more-sep" role="separator"></span>` +
     `<button type="button" data-action="officers">${icon('help')}Questions?</button>` +
@@ -391,6 +395,7 @@ function renderTopNav() {
   const pages = [['calendar', 'Calendar']];
   if (signupOpen()) pages.push(['signup', 'Event Sign-Up']);
   pages.push(['forms', 'Forms'], ['updates', 'Announcements']);
+  if (pointsVisible()) pages.push(['points', 'Points']);
   if (buddyVisible()) pages.push(['buddies', 'Buddy System']);
   const resLinks = [['resources', 'Meeting slides', 'Slides from every chapter meeting'], ['prep', 'Study & Prep', 'Event guides and Zoom recordings'], ['general', 'General resources', 'PA FBLA and national FBLA links']];
   const resActive = RESOURCE_PAGES.includes(state.page);
@@ -584,6 +589,7 @@ function linkLive(link) {
   if (link === 'signup') return signupOpen();
   if (link === 'buddies') return buddyVisible();
   if (link === 'event-quiz') return quizVisible();
+  if (link === 'points') return pointsVisible();
   return !!link;
 }
 // An <a> (or a button, for the officers pop-up) for a Home link.
@@ -592,6 +598,130 @@ function homeLinkTag(link, cls, inner) {
   if (link === 'about') return `<a class="${cls}" href="/about" data-action="about">${inner}</a>`;
   if (/^https?:\/\//i.test(link)) return `<a class="${cls}" href="${safeUrl(link)}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>`;
   return `<a class="${cls}" href="#${esc(link)}">${inner}</a>`;
+}
+
+// ---------- points ----------
+// Officers edit all of this in the officer portal's Points tab (points_page).
+const POINTS_DEFAULTS = {
+  intro: '',
+  form_url: 'https://docs.google.com/forms/d/e/1FAIpQLSdjJKoH8SrDvcGQArTgKLcKtirukghNu5GP4VNswAcRUPImvQ/viewform',
+  pdf_url: 'https://drive.google.com/file/d/14bi1tLjCGVkICtHrrmqzh-QMyldCbT22/view',
+  leaderboard: [],
+  updated_at: '',
+};
+const pointsCfg = () => cfg().points_page || POINTS_DEFAULTS;
+// Google Drive file links can be shown in the page; other PDF links only open.
+function pdfEmbedUrl(url) {
+  const m = /^https:\/\/drive\.google\.com\/file\/d\/([\w-]+)/.exec(url || '');
+  return m ? `https://drive.google.com/file/d/${m[1]}/preview` : '';
+}
+const pointsText = (n) => (n === null || n === undefined ? '' : `${Number(n).toLocaleString('en-US')} ${n === 1 ? 'point' : 'points'}`);
+const PLACE = ['1st', '2nd', '3rd'];
+const ordinal = (n) => `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;
+// One member's own points, by their full name (POST /api/public/points/lookup).
+// Nothing is suggested while typing; only an exact full name finds anyone.
+const ptsLookup = { name: '', busy: false, result: null };
+function ptsLookupResultHtml() {
+  const r = ptsLookup.result;
+  if (!r) return '';
+  if (!r.found) return `<p class="pts-lookup-miss" role="alert">${esc(r.error || "We couldn't find that name.")}</p>`;
+  if (r.officer) return `<div class="pts-lookup-hit"><span class="pts-lookup-who">${esc(r.name)}</span><strong class="pts-lookup-score">Officer</strong></div>`;
+  return `<div class="pts-lookup-hit">
+    <span class="pts-lookup-who">${esc(r.name)}</span>
+    ${r.points === null || r.points === undefined
+      ? '<span class="pts-lookup-none">No points recorded yet. Turn them in with the points form.</span>'
+      : `<strong class="pts-lookup-score">${esc(Number(r.points).toLocaleString('en-US'))}</strong><span class="pts-lookup-unit">${r.points === 1 ? 'point' : 'points'}</span>`}
+  </div>`;
+}
+function showPtsLookup() {
+  const out = $('#pts-lookup-result');
+  if (out) out.innerHTML = ptsLookupResultHtml();
+  const btn = $('#pts-lookup-form button');
+  if (btn) { btn.disabled = ptsLookup.busy; btn.textContent = ptsLookup.busy ? 'Looking...' : 'Look up'; }
+}
+async function submitPointsLookup(form) {
+  const name = form.elements.name.value.trim();
+  ptsLookup.name = name;
+  if (name.split(/\s+/).filter(Boolean).length < 2) {
+    ptsLookup.result = { found: false, error: 'Type your first and last name.' };
+    showPtsLookup();
+    return;
+  }
+  ptsLookup.busy = true; ptsLookup.result = null; showPtsLookup();
+  try {
+    const res = await fetch('/api/public/points/lookup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    const out = await res.json().catch(() => ({}));
+    ptsLookup.result = res.ok ? out : { found: false, error: res.status === 429 ? 'Too many lookups right now. Wait a few minutes and try again.' : (out.error || 'Something went wrong. Try again.') };
+  } catch (e) {
+    ptsLookup.result = { found: false, error: "Couldn't look that up. Check your connection and try again." };
+  }
+  ptsLookup.busy = false;
+  showPtsLookup();
+}
+
+function renderPoints() {
+  if (!pointsVisible()) return `${heading('Points')}<section class="m-section-card"><div class="empty-state"><h2>This page isn't available right now.</h2></div></section>`;
+  const p = pointsCfg();
+  const ranked = (p.leaderboard || []).slice(0, 10);
+  const top = ranked.slice(0, 3);
+  const rest = ranked.slice(3);
+  const embed = pdfEmbedUrl(p.pdf_url);
+  // Podium order on wide screens: 2nd, 1st, 3rd. Phones list them 1, 2, 3.
+  const spot = (r, i) => `<li class="pts-spot pts-${i + 1}">
+      <span class="pts-medal" aria-hidden="true">${i + 1}</span>
+      <span class="sr-only">${PLACE[i]} place: </span>
+      <strong class="pts-name">${esc(r.name)}</strong>
+      ${r.points !== null && r.points !== undefined ? `<span class="pts-score">${esc(pointsText(r.points))}</span>` : ''}
+      <span class="pts-base" aria-hidden="true">${PLACE[i]}</span>
+    </li>`;
+  const board = top.length
+    ? `<ol class="pts-podium pts-n${top.length}">${top.map(spot).join('')}</ol>
+      ${rest.length ? `<ol class="pts-rest" start="4">${rest.map((r, i) => `<li>
+        <span class="pts-rank" aria-hidden="true">${i + 4}</span>
+        <span class="sr-only">${ordinal(i + 4)} place: </span>
+        <strong class="pts-rest-name">${esc(r.name)}</strong>
+        ${r.points !== null && r.points !== undefined ? `<span class="pts-rest-score">${esc(pointsText(r.points))}</span>` : ''}
+      </li>`).join('')}</ol>` : ''}`
+    : '<p class="m-empty">The leaderboard goes up once officers post the first standings.</p>';
+  return `${heading('Points', esc(p.intro || ''))}
+  <section class="panel pts-board">
+    <div class="pts-board-head">
+      <h2>Leaderboard</h2>
+      ${p.updated_at && top.length ? `<span class="pts-updated">Updated ${MONTHS[parts(p.updated_at).m - 1]} ${parts(p.updated_at).d}</span>` : ''}
+    </div>
+    ${board}
+  </section>
+
+  <section class="panel pts-lookup">
+    <h2>Look up your points</h2>
+    <p>Type your full name, first and last.</p>
+    <form id="pts-lookup-form" class="pts-lookup-form" novalidate>
+      <label class="sr-only" for="pts-lookup-name">Your full name</label>
+      <input id="pts-lookup-name" name="name" type="text" maxlength="120" placeholder="First and last name" autocomplete="off" autocapitalize="words" spellcheck="false" value="${esc(ptsLookup.name)}" />
+      <button class="button gold" type="submit" ${ptsLookup.busy ? 'disabled' : ''}>${ptsLookup.busy ? 'Looking...' : 'Look up'}</button>
+    </form>
+    <div id="pts-lookup-result" class="pts-lookup-result" aria-live="polite">${ptsLookupResultHtml()}</div>
+  </section>
+
+  <section class="pts-actions">
+    ${p.form_url ? `<a class="pts-action pts-action-form" href="${safeUrl(p.form_url)}" target="_blank" rel="noopener">
+      <span class="pts-action-icon">${icon('check')}</span>
+      <span class="pts-action-body"><strong>Submit your points</strong><span>Did something that counts? Send it in with the points form.</span></span>
+      <span class="button gold">Open the form${icon('external')}</span>
+      <span class="sr-only"> (opens in a new tab)</span>
+    </a>` : ''}
+    ${p.pdf_url ? `<a class="pts-action" href="${safeUrl(p.pdf_url)}" target="_blank" rel="noopener">
+      <span class="pts-action-icon">${icon('file')}</span>
+      <span class="pts-action-body"><strong>The point system</strong><span>What earns points and how many each one is worth.</span></span>
+      <span class="button secondary">Open the PDF${icon('external')}</span>
+      <span class="sr-only"> (opens in a new tab)</span>
+    </a>` : ''}
+  </section>
+
+  ${embed ? `<section class="panel pts-pdf">
+    <div class="pts-board-head"><h2>Point system</h2><a class="m-more-link" href="${safeUrl(p.pdf_url)}" target="_blank" rel="noopener">Open full screen<span class="sr-only"> (opens in a new tab)</span></a></div>
+    <div class="pts-frame"><iframe src="${esc(embed)}" title="Point system PDF" loading="lazy" allow="autoplay"></iframe></div>
+  </section>` : ''}`;
 }
 
 function renderHome() {
@@ -705,7 +835,7 @@ function calListRow(c) {
     <span class="m-cal-date">${esc(shortDate(c.date))}${c.end_date ? ' to ' + esc(shortDate(c.end_date)) : ''}${c.time ? ', ' + esc(fmtTime(c.time)) : ''}</span>
     <span class="cal-item ${meta.cls}" style="position:static;${meta.color ? `background:${esc(meta.color)};border-color:${esc(meta.color)};color:#fff;` : ''}">${esc(meta.label)}</span>
     <span class="m-cal-title">${esc(c.title)}</span>
-    ${c.location || c.description ? `<span class="m-cal-desc">${esc([c.location, c.description].filter(Boolean).join(' · '))}</span>` : ''}
+    ${c.location || c.description ? `<span class="m-cal-desc">${[c.location, c.description].filter(Boolean).map(esc).join('<br>')}</span>` : ''}
   </li>`;
 }
 function renderCalendar() {
@@ -881,7 +1011,7 @@ function renderEventQuiz() {
       ${preview}
       <h2 class="quiz-h">Instructions</h2>
       <p class="quiz-lead">Answer each question honestly - responses will be used to recommend competitive events that may fit your strengths, interests, and preferences. You are not required to choose one of the events recommended to you.</p>
-      <p class="quiz-small">${total} questions · about 5 minutes</p>
+      <p class="quiz-small">${total} questions, about 5 minutes</p>
       <button class="button" type="button" data-action="quiz-start">Start the quiz</button>
     </section>`;
   }
@@ -910,7 +1040,7 @@ function quizResults(Q) {
   const top = ranked.slice(0, 5), more = ranked.slice(5, 10);
   const guide = (name) => { const u = eventGuideUrl(name); return u ? `<a class="quiz-link" href="${u}" target="_blank" rel="noopener">Event guide (PDF)<span class="sr-only"> for ${esc(name)}, opens in a new tab</span></a>` : ''; };
   const card = (r, i) => `<li class="quiz-rec">
-    <div class="quiz-rec-head"><span class="quiz-rank">${i + 1}</span><div><h3>${esc(r.event.name)}</h3><p class="quiz-format">${esc(r.format)}${r.event.intro ? ' · 9th & 10th grade only' : ''}${r.event.fmt === 'chapter' ? ' · one team per chapter' : ''}</p></div></div>
+    <div class="quiz-rec-head"><span class="quiz-rank">${i + 1}</span><div><h3>${esc(r.event.name)}</h3><p class="quiz-format">${esc(r.format)}${r.event.intro ? ', 9th & 10th grade only' : ''}${r.event.fmt === 'chapter' ? ', one team per chapter' : ''}</p></div></div>
     <p class="quiz-desc">${esc(r.event.desc)}</p>
     ${r.reasons.length ? `<p class="quiz-why-h">Why it may fit you</p><ul class="quiz-why">${r.reasons.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
     ${r.cautions.length ? `<p class="quiz-caution"><strong>Keep in mind:</strong> ${esc(r.cautions[0])}</p>` : ''}
@@ -920,7 +1050,7 @@ function quizResults(Q) {
   <section class="m-section-card quiz quiz-results">
     <ol class="quiz-recs">${top.map(card).join('')}</ol>
     <h2 class="quiz-h quiz-more-h">Also worth a look</h2>
-    <ul class="quiz-more">${more.map(r => `<li><strong>${esc(r.event.name)}</strong><span>${esc(r.format)}${r.event.intro ? ' · 9th & 10th grade only' : ''}</span>${guide(r.event.name)}</li>`).join('')}</ul>
+    <ul class="quiz-more">${more.map(r => `<li><strong>${esc(r.event.name)}</strong><span>${esc(r.format)}${r.event.intro ? ', 9th & 10th grade only' : ''}</span>${guide(r.event.name)}</li>`).join('')}</ul>
     <p class="quiz-small">You are not required to choose one of the events recommended to you. Every event's guide is on <a href="#prep">Study &amp; Prep</a>, and an officer can help you decide.</p>
     <div class="quiz-nav">
       <button class="button secondary" type="button" data-action="quiz-retake">Retake the quiz</button>
@@ -1113,18 +1243,11 @@ function renderSignup() {
     <section class="m-section-card"><div class="empty-state"><h2>${sd.error ? "Event sign-up didn't load." : "Event sign-up isn't open right now."}</h2><p>${sd.error ? 'Trying again…' : 'Officers will open it when it is time to choose events. Keep this page open: the events will show up here by themselves, no need to refresh.'}</p></div></section>`;
   }
   if (sd.code_required && !state.signupCodeOk) return renderSignupCode();
-  return `${heading('Event Sign-Up', sd.view_only ? 'Who signed up for each competitive event.' : 'Sign up for a competitive event, and add your teammates if it is a team event.')}
+  const rules = `You can sign up for one individual or team event${sd.one_event_only ? '' : ', plus one chapter project'}. For a team event, add your teammates and the whole team is signed up together. Once you're signed up, only an officer can change it.`;
+  return `${heading('Event Sign-Up', sd.view_only ? 'Who signed up for each competitive event.' : rules)}
   <section class="m-section-card su">
     ${sd.preview ? '<p class="quiz-preview-note">Officer preview: sign-up is closed, so members can\'t see this page. Open it in the officer portal (Events > Event Sign-Up).</p>' : ''}
-    ${sd.view_only ? '<div class="su-closed"><strong>Sign-up is closed.</strong> You can still see each event and who signed up. To change a sign-up, ask an officer.</div>' : `<div class="su-info">
-      <strong>How it works</strong>
-      <ul>
-        <li>Sign up for <strong>one</strong> individual or team event${sd.one_event_only ? '' : ', plus one chapter project'}.</li>
-        <li>For a team event, add your teammates. Everyone on the team is signed up together.</li>
-        <li>Once you're signed up, you can't change it here. Ask an officer.</li>
-        ${sd.member_list ? "<li>Use your name as it is on the chapter's FBLA member list. Your first name works if no one else has it.</li>" : ''}
-      </ul>
-    </div>`}
+    ${sd.view_only ? '<div class="su-closed"><strong>Sign-up is closed.</strong> You can still see each event and who signed up. To change a sign-up, ask an officer.</div>' : ''}
     <div class="su-toolbar">
       <label class="input-wrap su-search">${icon('search')}<input id="signup-search" type="search" placeholder="${state.signupData && state.signupData.entries ? 'Search events or names' : 'Search events'}" value="${esc(state.signupQuery || '')}" aria-label="Search events" /></label>
       <div class="su-filters" role="group" aria-label="Show">
@@ -1138,11 +1261,6 @@ function renderSignup() {
 // Who signed up for an event: one line per entry (a team's names together).
 const entriesFor = (e) => (((state.signupData || {}).entries || {})[e.id] || []);
 const signedUpNames = (e) => entriesFor(e).map(t => t.join(' ')).join(' ');
-function whoList(e) {
-  const list = entriesFor(e);
-  if (!list.length) return '';
-  return `<ul class="su-who" aria-label="Signed up for ${esc(e.name)}">${list.map(t => `<li>${t.map(esc).join(', ')}</li>`).join('')}</ul>`;
-}
 function signupResults() {
   const sd = state.signupData || { events: [] };
   const q = (state.signupQuery || '').trim().toLowerCase();
@@ -1151,26 +1269,28 @@ function signupResults() {
   const list = sd.events.filter(e => (!q || e.name.toLowerCase().includes(q) || signedUpNames(e).toLowerCase().includes(q))
     && (filter === 'all' || kind(e) === filter)
     && !(state.signupHideFull && e.taken >= e.max_entries));
-  const card = (e) => {
+  // One box per event: who signed up, and a seat for every spot (filled = taken).
+  const canSign = sd.open || sd.preview;
+  const meta = (e) => [e.team || filter !== 'individual' && filter !== 'all' ? teamText(e) : '', e.grades ? '9th-10th only' : ''].filter(Boolean).join(', ');
+  const box = (e) => {
     const left = Math.max(0, e.max_entries - e.taken);
-    const status = left === 0 ? 'full' : left === 1 ? 'low' : 'open';
-    return `<li class="su-card is-${status}">
-      <div class="su-card-top">
-        <strong class="su-name-t">${esc(e.name)}</strong>
-        ${left === 0 ? '<span class="su-pill is-full">Full</span>' : sd.open || sd.preview ? `<span class="su-pill is-${status}">${left} left</span>` : ''}
-      </div>
-      <p class="su-meta">${teamText(e)}${e.grades ? ' · 9th-10th only' : ''}</p>
-      ${whoList(e)}
-      <div class="su-card-foot">
-        <span class="su-count">${e.taken} of ${e.max_entries} ${e.team ? (e.max_entries === 1 ? 'team' : 'teams') : (e.max_entries === 1 ? 'spot' : 'spots')} taken</span>
-        ${left === 0 || !(sd.open || sd.preview) ? '' : `<button class="button su-btn" type="button" data-action="signup-open" data-id="${e.id}">Sign up</button>`}
+    const unit = (n) => (e.team ? (n === 1 ? 'team' : 'teams') : (n === 1 ? 'spot' : 'spots'));
+    const teams = entriesFor(e);
+    const seats = e.max_entries <= 10 ? `<span class="seat-row" aria-hidden="true">${Array.from({ length: e.max_entries }, (_, i) => `<span class="seat${i < e.taken ? ' is-taken' : ''}"></span>`).join('')}</span>` : '';
+    return `<li class="seat-card${left === 0 ? ' is-full' : left === 1 && canSign ? ' is-low' : ''}">
+      <div class="seat-head"><h3>${esc(e.name)}</h3>${meta(e) ? `<p>${meta(e)}</p>` : ''}</div>
+      ${sd.entries ? (teams.length ? `<ul class="seat-names" aria-label="Signed up for ${esc(e.name)}">${teams.map(t => `<li>${t.map(esc).join(', ')}</li>`).join('')}</ul>` : '<p class="seat-none">No one yet</p>') : ''}
+      <div class="seat-foot">
+        <span class="seat-left">${seats}<span>${left === 0 ? 'Full' : canSign ? `${left} ${unit(left)} left` : `${e.taken} of ${e.max_entries} taken`}</span></span>
+        ${left === 0 || !canSign ? '' : `<button class="seat-btn" type="button" data-action="signup-open" data-id="${e.id}">Sign up</button>`}
       </div>
     </li>`;
   };
-  const group = (title, items) => items.length ? `<h2 class="su-h">${title} <span>${items.length}</span></h2><ul class="su-grid">${items.map(card).join('')}</ul>` : '';
+  const grid = (items) => `<ul class="seat-grid">${items.map(box).join('')}</ul>`;
+  const group = (title, items) => items.length ? `<section class="seat-group"><h2 class="seat-title">${title}</h2>${grid(items)}</section>` : '';
   const html = filter === 'all'
     ? group('Individual events', list.filter(e => kind(e) === 'individual')) + group('Team events', list.filter(e => kind(e) === 'team')) + group('Chapter projects', list.filter(e => kind(e) === 'chapter'))
-    : (list.length ? `<ul class="su-grid">${list.map(card).join('')}</ul>` : '');
+    : (list.length ? `<section class="seat-group">${grid(list)}</section>` : '');
   return html || '<div class="empty-state"><h2>No events match.</h2></div>';
 }
 // The sign-up dialog: enter names -> review who that is -> confirm.
@@ -1189,8 +1309,8 @@ function openSignupForm(id, keep) {
       <p class="su-check ${c ? (c.ok ? 'ok' : 'bad') : ''}" id="su-check-${i}" aria-live="polite">${c ? esc(c.ok ? `✓ ${c.name}` : c.error) : ''}</p>
     </div>`;
   }).join('');
-  openPlainDialog(`Sign up: ${esc(e.name)}`, `
-    <p class="su-dmeta">${teamText(e)}${e.grades ? ' · 9th & 10th grade only' : ''} · ${spotsText(e)}</p>
+  openPlainDialog(`Sign up for ${esc(e.name)}`, `
+    <p class="su-dmeta">${teamText(e)}${e.grades ? ', 9th & 10th grade only' : ''}, ${spotsText(e)}</p>
     <form id="signup-form" novalidate>
       ${fields}
       <p class="su-error" id="su-error" role="alert"></p>
@@ -1241,7 +1361,7 @@ async function reviewSignup(form) {
   const names = results.filter(Boolean).map(r => r.name);
   if (new Set(names).size !== names.length) { err.textContent = 'The same person is listed twice.'; return; }
   f.resolved = names;
-  openPlainDialog(`Sign up: ${esc(e.name)}`, `
+  openPlainDialog(`Sign up for ${esc(e.name)}`, `
     <p class="su-dmeta">Check that this is right. You won't be able to change it yourself after you confirm.</p>
     <ul class="su-review">${names.map((n, i) => `<li><span>${i === 0 ? 'You' : `Teammate ${i}`}</span><strong>${esc(n)}</strong></li>`).join('')}</ul>
     <p class="su-error" id="su-error" role="alert"></p>
@@ -1310,7 +1430,7 @@ function renderUpdates() {
       <div class="m-ann">
         <h2 class="m-ann-title">${a.pinned ? icon('pin') : ''}${esc(a.title)}</h2>
         ${a.body ? `<div class="m-ann-body">${esc(a.body)}</div>` : ''}
-        <div class="m-ann-meta"><span>${esc(postedLabel(a.created_at))}</span><span aria-hidden="true">·</span><span>${esc(a.category || 'Chapter news')}</span></div>
+        <div class="m-ann-meta"><span>${esc(postedLabel(a.created_at))}</span><span class="m-ann-cat">${esc(a.category || 'Chapter news')}</span></div>
       </div>
     </section>`).join('') || '<section class="m-section-card"><p class="m-empty">No announcements yet.</p></section>'}</div>`;
 }
@@ -1345,7 +1465,7 @@ let eventGuide = null, eventGuideLoading = false;
 function loadEventGuide() {
   if (eventGuide || eventGuideLoading) return;
   eventGuideLoading = true;
-  fetch('/event-guide.json?v=2').then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+  fetch('/event-guide.json?v=5').then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
     .then(g => { eventGuide = g; })
     .catch(() => { eventGuide = { events: [], failed: true }; })
     .finally(() => { eventGuideLoading = false; if (state.page === 'prep') render(); });
@@ -1354,6 +1474,9 @@ const evKey = (t) => fold(t).replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').
 const EV_KINDS = {
   test: 'Test', roleplay: 'Role play', present: 'Presentation or project', speech: 'Speech', chapter: 'Chapter project',
 };
+// After a format, "Individual, grades 9-10 only" reads as "individual, grades 9-10 only".
+const lowerFirst = (t) => String(t || '').replace(/^(Individual|One|Team)/, (m) => m.toLowerCase());
+const EV_GROUPS = [['test', 'Tests'], ['roleplay', 'Role plays and interviews'], ['present', 'Presentations and projects'], ['speech', 'Speeches'], ['chapter', 'Chapter projects'], ['other', 'More PA events']];
 const EV_FILTERS = [['all', 'All events'], ['test', 'Tests'], ['roleplay', 'Role plays'], ['present', 'Presentations and projects'], ['speech', 'Speeches'], ['chapter', 'Chapter projects']];
 const studyResources = () => (D().resources || []).filter(r => r.kind === 'resource');
 // The official PA PDF (and any other chapter materials) tagged with this event.
@@ -1375,12 +1498,12 @@ function eventSessions(ev) {
 const nextSession = (ev) => eventSessions(ev).find(l => !linkWhen(l).past) || null;
 function eventBox(ev) {
   const z = nextSession(ev), w = z ? linkWhen(z) : null;
-  return `<a class="ev-box ev-k-${ev.category || 'none'}" href="#prep/event/${esc(ev.slug)}">
-    <span class="ev-format">${esc(ev.format || EV_KINDS[ev.category] || 'Competitive event')}</span>
-    <strong class="ev-name">${esc(ev.name)}</strong>
-    <span class="ev-entry">${esc(ev.entry)}</span>
-    ${w ? `<span class="ev-zoom">${icon('clock')}Zoom session ${esc(w.day)}${w.time ? `, ${esc(w.time)}` : ''}</span>`
-      : eventSessions(ev).some(l => safeUrl(l.recording_url)) ? `<span class="ev-zoom">${icon('slides')}Zoom recording available</span>` : ''}
+  const rec = !w && eventSessions(ev).some(l => safeUrl(l.recording_url));
+  return `<a class="evb" href="#prep/event/${esc(ev.slug)}">
+    <strong class="evb-name">${esc(ev.name)}</strong>
+    <span class="evb-meta">${esc(ev.format || EV_KINDS[ev.category] || 'Competitive event')}</span>
+    <span class="evb-meta">${esc(ev.entry)}</span>
+    <span class="evb-foot">${w ? `<span class="evb-note is-soon">${icon('clock')}Zoom session ${esc(w.day)}</span>` : rec ? `<span class="evb-note">${icon('slides')}Zoom recording</span>` : '<span></span>'}<span class="evb-go" aria-hidden="true">${icon('arrow')}</span></span>
   </a>`;
 }
 function eventResults() {
@@ -1389,7 +1512,13 @@ function eventResults() {
   const q = evKey(state.prepQuery), f = state.evFilter || 'all';
   const list = eventGuide.events.filter(e => (f === 'all' || e.category === f) && (!state.evYoung || e.grades_9_10)
     && (!q || evKey(`${e.name} ${e.format || ''} ${e.focus || ''}`).includes(q)));
-  return list.length ? `<div class="ev-grid">${list.map(eventBox).join('')}</div>` : '<div class="empty-state"><h2>No events match.</h2></div>';
+  if (!list.length) return '<div class="empty-state"><h2>No events match.</h2></div>';
+  if (f !== 'all') return `<div class="ev-grid evg">${list.map(eventBox).join('')}</div>`;
+  // All events: grouped by type, each under its own heading.
+  return EV_GROUPS.map(([k, title]) => {
+    const items = list.filter(e => (e.category || 'other') === k);
+    return items.length ? `<section class="evg-group"><h2 class="evg-title">${title}</h2><div class="ev-grid evg">${items.map(eventBox).join('')}</div></section>` : '';
+  }).join('');
 }
 // Study materials that aren't for one event (e.g. "All Topics for Events").
 // Ones with no link yet (events PA hasn't posted guidelines for) stay off the
@@ -1441,21 +1570,20 @@ function renderEventPage(slug) {
   const done = evPlanDone(ev.slug);
   const general = (eventGuide.ai_prompts || []).find(x => x.title === (ev.format === 'Production test' ? 'Prepare for software testing' : PROMPT_FOR[ev.category]));
   const promptCard = (title, text) => `<div class="ev-prompt">
-      <div class="ev-prompt-head"><h3>${esc(title)}</h3><button type="button" class="ev-copy" data-action="ev-copy">Copy</button></div>
+      <div class="ev-prompt-head"><h4>${esc(title)}</h4><button type="button" class="ev-copy" data-action="ev-copy">Copy</button></div>
       <p class="ev-prompt-text">${esc(text)}</p>
     </div>`;
   const sessionRow = (l) => { const w = linkWhen(l); return `<li class="${w.past ? 'is-past' : ''}">
-      <span class="ev-sess-when">${esc(w.day)}${w.time ? ` · ${esc(w.time)}` : ''}</span>
+      <span class="ev-sess-when">${esc(w.day)}${w.time ? ` at ${esc(w.time)}` : ''}</span>
       ${evKey(l.title) === evKey(ev.name) ? '' : `<span class="ev-sess-title">${esc(l.title)}</span>`}
       ${w.past && safeUrl(l.recording_url) ? `<a href="${safeUrl(l.recording_url)}" target="_blank" rel="noopener">Watch recording${icon('external')}</a>${passcodeLine(l.recording_passcode)}`
         : w.past ? '<span class="ev-sess-wait">Recording not posted yet</span>'
         : safeUrl(l.url) ? `<a href="${safeUrl(l.url)}" target="_blank" rel="noopener">Register${icon('external')}</a>` : ''}
     </li>`; };
   return `<a class="ev-back" href="#prep">${icon('left')}All events</a>
-  <header class="ev-hero ev-k-${ev.category || 'none'}">
-    <p class="ev-format">${esc(ev.format || EV_KINDS[ev.category] || 'Competitive event')}</p>
+  <header class="ev-hero">
     <h2>${esc(ev.name)}</h2>
-    <p class="ev-entry">${esc(ev.entry)}</p>
+    <p class="ev-entry">${esc(ev.format || EV_KINDS[ev.category] || 'Competitive event')}, ${esc(lowerFirst(ev.entry))}</p>
     <div class="ev-actions">
       ${pdf ? `<a class="button" href="${safeUrl(pdf.url)}" target="_blank" rel="noopener">${icon('file')}${!ev.category ? 'Official guideline' : scored ? 'Official guideline and rubric' : 'Official guideline and topics'} (PDF)</a>` : '<span class="ev-nopdf">The official PA guideline for this event isn\'t posted here yet. Check pafbla.org.</span>'}
       <a class="button secondary" href="https://www.fbla.org/hs-ce-26-27/" target="_blank" rel="noopener">National FBLA guidelines${icon('external')}</a>
@@ -1471,12 +1599,13 @@ function renderEventPage(slug) {
       <section><h3>Where it can lead</h3><p>${esc(ev.future)}</p></section>` : `
       <section><h3>About this event</h3><p>Will get added soon.</p></section>`}
     </div>
-    <aside class="ev-side">
-      ${sessions.length ? `<section class="ev-card"><h3>PA FBLA Zoom session</h3><ul class="ev-sessions">${sessions.map(sessionRow).join('')}</ul><p class="ev-small">${sessions.some(l => !linkWhen(l).past) ? 'About 30 minutes with the PA competitive events coordinator. Register first.' : sessions.some(l => safeUrl(l.recording_url)) ? 'This session already happened. Watch the recording with the passcode.' : 'This session already happened. The recording shows here once it\'s posted.'}</p></section>` : ''}
-      ${ev.prompt ? promptCard('AI practice prompt', ev.prompt) : ''}
-      ${general ? promptCard(general.title, general.prompt.replace(/\[EVENT\]/g, ev.name)) : ''}
-      ${signupOpen() ? `<section class="ev-card"><h3>Event Sign-Up</h3><p>${cfg().event_signup_open ? 'Sign-up for competitive events is open.' : 'See who signed up for each event.'}</p><a class="button secondary" href="#signup">Go to Event Sign-Up${icon('arrow')}</a></section>` : ''}
-      ${extra.length ? `<section class="ev-card"><h3>More from the chapter</h3><ul class="ev-more">${extra.map(r => `<li>${safeUrl(r.url) ? `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">${esc(r.title)}${icon('external')}</a>` : esc(r.title)}</li>`).join('')}</ul></section>` : ''}
+    <aside class="ev-side evp-side">
+      ${sessions.length ? `<section class="evp-sec"><h3>PA FBLA Zoom session</h3><ul class="ev-sessions">${sessions.map(sessionRow).join('')}</ul><p class="ev-small">${sessions.some(l => !linkWhen(l).past) ? 'About 30 minutes with the PA competitive events coordinator. Register first.' : sessions.some(l => safeUrl(l.recording_url)) ? 'This session already happened. Watch the recording with the passcode.' : 'This session already happened. The recording shows here once it\'s posted.'}</p></section>` : ''}
+      ${ev.prompt || general ? `<section class="evp-sec"><h3>Practice with a chatbot</h3><p>Copy one into ChatGPT or another chatbot, along with the official guideline.</p>
+      ${ev.prompt ? promptCard(`For ${ev.name}`, ev.prompt) : ''}
+      ${general ? promptCard(general.title, general.prompt.replace(/\[EVENT\]/g, ev.name)) : ''}</section>` : ''}
+      ${signupOpen() ? `<section class="evp-sec"><h3>Event Sign-Up</h3><p>${cfg().event_signup_open ? 'Sign-up for competitive events is open.' : 'See who signed up for each event.'} <a class="evp-link" href="#signup">Go to Event Sign-Up</a></p></section>` : ''}
+      ${extra.length ? `<section class="evp-sec"><h3>More from the chapter</h3><ul class="ev-more">${extra.map(r => `<li>${safeUrl(r.url) ? `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">${esc(r.title)}${icon('external')}</a>` : esc(r.title)}</li>`).join('')}</ul></section>` : ''}
     </aside>
   </div>`;
 }
@@ -1535,7 +1664,7 @@ function linkRow(r) {
     ${href ? `<span class="lk-go">${label}${icon('external')}</span>` : ''}`;
   return `<li>${href ? `<a class="${cls}" href="${href}" target="_blank" rel="noopener">${inner}<span class="sr-only"> (opens in a new tab)</span></a>` : `<div class="${cls}">${inner}</div>`}</li>`;
 }
-// The member guide's study resources and the chapter's KlutchPrep code.
+// The member guide's study resources.
 function guideResources() {
   const g = eventGuide;
   if (!g || !g.resources) return '';
@@ -1544,7 +1673,6 @@ function guideResources() {
   if (!list.length && q) return '';
   return `<section class="lk-group lk-guide">
     <h2 class="lk-head">Study resources</h2>
-    ${g.klutchprep ? `<div class="lk-code"><div><strong>KlutchPrep chapter code</strong><span>${esc(g.klutchprep.note)}</span></div><code>${esc(g.klutchprep.code)}</code></div>` : ''}
     <ul class="lk-list">${list.map(r => `<li><a class="lk-row no-when" href="${safeUrl(r.url)}" target="_blank" rel="noopener">
       <span class="lk-text"><span class="lk-title">${esc(r.title)}</span><span class="lk-note">${esc(r.description)}</span></span>
       <span class="lk-go">Open${icon('external')}</span><span class="sr-only"> (opens in a new tab)</span></a></li>`).join('')}</ul>
@@ -1573,12 +1701,32 @@ function linkResults() {
     </section>`;
   }).join('');
 }
+// The chapter's practice sites (KlutchPrep code, ChapterPrep join link), at
+// the top of Study & Prep. The text is in public/event-guide.json.
+function practiceSites() {
+  const g = eventGuide;
+  if (!g || (!g.klutchprep && !g.chapterprep)) return '';
+  return `<section class="ps-sites" aria-label="Practice sites">
+    ${g.klutchprep ? `<div class="ps-site">
+      <div class="ps-body"><h2>KlutchPrep</h2><p>${esc(g.klutchprep.note)}</p></div>
+      <div class="ps-foot">
+        <div class="ps-code"><span>Chapter code</span><code>${esc(g.klutchprep.code)}</code></div>
+        ${g.klutchprep.url ? `<a class="button gold" href="${safeUrl(g.klutchprep.url)}" target="_blank" rel="noopener">Open KlutchPrep${icon('external')}<span class="sr-only"> (opens in a new tab)</span></a>` : ''}
+      </div>
+    </div>` : ''}
+    ${g.chapterprep ? `<div class="ps-site">
+      <div class="ps-body"><h2>ChapterPrep</h2><p>${esc(g.chapterprep.note)}</p></div>
+      <a class="button gold" href="${safeUrl(g.chapterprep.url)}" target="_blank" rel="noopener">Join ChapterPrep${icon('external')}<span class="sr-only"> (opens in a new tab)</span></a>
+    </div>` : ''}
+  </section>`;
+}
 function renderPrep() {
   const links = state.prepTab === 'links';
   loadEventGuide();
   const head = heading('Study &amp; Prep', intro('prep'));
   if (!links && state.prepEvent) return `${head}<section class="m-section-card ev-page">${renderEventPage(state.prepEvent)}</section>`;
   return `${head}
+  ${practiceSites()}
   <section class="m-section-card">
     ${quizVisible() ? '<p class="quiz-pointer">Not sure which event to pick? <a href="#event-quiz">Take the Event Recommendation Quiz</a></p>' : ''}
     <div class="prep-tabs" role="navigation" aria-label="Study & Prep">
@@ -1706,8 +1854,8 @@ function render({ focus = false } = {}) {
   renderNav();
   const title = PAGE_TITLES[state.page] || 'Home';
   $('#breadcrumb').textContent = title;
-  document.title = `${title} · ${chapterName()}`;
-  const pages = { home: renderHome, calendar: renderCalendar, forms: renderForms, updates: renderUpdates, resources: renderResources, prep: renderPrep, general: renderGeneral, 'event-quiz': renderEventQuiz, signup: renderSignup, buddies: renderBuddies };
+  document.title = `${title} | ${chapterName()}`;
+  const pages = { home: renderHome, calendar: renderCalendar, forms: renderForms, updates: renderUpdates, resources: renderResources, prep: renderPrep, general: renderGeneral, points: renderPoints, 'event-quiz': renderEventQuiz, signup: renderSignup, buddies: renderBuddies };
   const main = $('#main');
   main.innerHTML = (pages[state.page] || renderHome)();
   main.setAttribute('aria-busy', 'false');
@@ -1774,7 +1922,7 @@ function maybePopupForm() {
   const meta = [next.required ? '<span class="req-note">Required</span>' : '', next.event_name ? esc(next.event_name) : '', next.due_date ? `${past ? 'Was due' : 'Due'} ${esc(shortDate(next.due_date))}` : ''].filter(Boolean);
   openPlainDialog(esc(next.title), `
     ${next.description ? `<p>${esc(next.description)}</p>` : ''}
-    ${meta.length ? `<p class="plain-meta">${meta.join(' · ')}</p>` : ''}
+    ${meta.length ? `<p class="plain-meta">${meta.join(', ')}</p>` : ''}
     <div class="plain-actions">
       <a class="button" href="${safeUrl(next.url)}" target="_blank" rel="noopener" data-action="popup-open" data-id="${next.id}">Open form<span class="sr-only"> (opens in a new tab)</span></a>
       <button class="button secondary" type="button" data-action="popup-later" data-id="${next.id}">Not now</button>
@@ -1973,7 +2121,7 @@ function searchResults(query) {
     ...NAV.map(([id, , title]) => ({ title, type: 'Page', action: 'search-route', id })),
     { title: 'About the Chapter', type: 'Page', action: 'about', id: '' },
     ...(d.announcements || []).map(a => ({ title: a.title, text: a.body, type: 'Announcement', action: 'update', id: a.id })),
-    ...upcoming().map(c => ({ title: c.title, text: c.description, type: `Calendar · ${shortDate(c.date)}`, action: 'item', id: c.key })),
+    ...upcoming().map(c => ({ title: c.title, text: c.description, type: `Calendar, ${shortDate(c.date)}`, action: 'item', id: c.key })),
     ...(d.forms || []).map(f => ({ title: f.title, text: f.description, type: 'Google Form', action: 'open-link', id: f.url })),
     ...(d.resources || []).map(r => ({ title: r.title, text: `${r.description || ''} ${r.competitive_event || ''} ${r.event_name || ''}`, type: kindInfo(r.kind).one, action: r.url ? 'open-link' : 'search-route', id: r.url || kindInfo(r.kind).page })),
   ];
@@ -2071,7 +2219,7 @@ function showAbout(push = true) {
     aboutOpenedFromHub = true;
     try { history.pushState({ about: true }, '', '/about'); } catch (e) { /* ignore */ }
   }
-  document.title = `About · ${chapterName()}`;
+  document.title = `About | ${chapterName()}`;
   if (!aboutLoaded) loadAboutInfo();
   $('#about-back').focus();
 }
@@ -2270,6 +2418,7 @@ document.addEventListener('click', (event) => {
 document.addEventListener('input', (event) => {
   const t = event.target;
   if (t.id === 'hub-search') updateHubSearch();
+  if (t.id === 'pts-lookup-name') ptsLookup.name = t.value; // kept if the page redraws
   if (t.id === 'resource-search') { state.resourceQuery = t.value; $('#resource-results').innerHTML = resourceResults(); }
   if (t.id === 'bd-search') {
     state.buddyQuery = t.value;
@@ -2315,6 +2464,7 @@ document.addEventListener('submit', (event) => {
   if (event.target.id === 'officer-login-form') { event.preventDefault(); submitOfficerLogin(event.target); }
   if (event.target.id === 'signup-form') { event.preventDefault(); reviewSignup(event.target); }
   if (event.target.id === 'signup-code-form') { event.preventDefault(); submitSignupCode(event.target); }
+  if (event.target.id === 'pts-lookup-form') { event.preventDefault(); submitPointsLookup(event.target); }
 });
 document.addEventListener('keydown', (event) => {
   const day = event.target.closest && event.target.closest('[data-action="cal-day"]');

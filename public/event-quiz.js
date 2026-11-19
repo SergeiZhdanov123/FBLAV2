@@ -114,7 +114,7 @@
   ];
 
   const AREA_LABEL = { business: 'starting or running a business', marketing: 'marketing and advertising', finance: 'finance and accounting', management: 'management and leadership', tech: 'technology and information systems', hospitality: 'hospitality and tourism', healthcare: 'healthcare' };
-  const FORMAT_LABEL = { test: 'Objective test', production: 'Production test (hands-on, on a computer)', roleplay: 'Objective test + role play', presentation: 'Prepared presentation', speech: 'Prepared speech', impromptu: 'Speech on a topic given on-site', interview: 'Interview', chapter: 'Chapter project: report + presentation' };
+  const FORMAT_LABEL = { test: 'Objective test', production: 'Production test (hands-on, on a computer)', roleplay: 'Objective test and role play', presentation: 'Prepared presentation', speech: 'Prepared speech', impromptu: 'Speech on a topic given on-site', interview: 'Interview', chapter: 'Chapter project with a report and presentation' };
   const TEAM_LABEL = { i: 'Individual', t3: 'Individual or team of 2-3', t45: 'Team of 4-5' };
   const SPOT = { roleplay: 1, impromptu: 1, interview: 1 };
   const PREPARED = { presentation: 1, speech: 1, chapter: 1 };
@@ -122,11 +122,11 @@
 
   function formatLine(e) {
     let f = FORMAT_LABEL[e.fmt];
-    if (e.fmt === 'presentation' && e.test) f = 'Objective test + written report + presentation';
-    else if (e.fmt === 'interview' && e.test) f = 'Application materials + objective test + interview';
-    else if (e.fmt === 'interview') f = 'Application materials + interview';
-    else if (e.pj && e.fmt === 'presentation') f = 'Pre-judged entry + presentation';
-    return `${TEAM_LABEL[e.team]} · ${f}`;
+    if (e.fmt === 'presentation' && e.test) f = 'Objective test, written report, and presentation';
+    else if (e.fmt === 'interview' && e.test) f = 'Application materials, objective test, and interview';
+    else if (e.fmt === 'interview') f = 'Application materials and interview';
+    else if (e.pj && e.fmt === 'presentation') f = 'Pre-judged entry and presentation';
+    return `${TEAM_LABEL[e.team]}, ${f.charAt(0).toLowerCase() + f.slice(1)}`;
   }
 
   // Turn answers into a profile of numbers (roughly -2..+2).

@@ -230,6 +230,44 @@ async function clearRoster() {
 }
 
 // ---------------------------------------------------------------------------
+// Member points (set by officers in the FBLA Member List)
+// ---------------------------------------------------------------------------
+// Whole number 0 to 1,000,000; blank means none recorded (null);
+// anything else is undefined (invalid).
+function cleanPoints(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).replace(/[,\s]/g, '');
+  if (!s) return null;
+  if (!/^\d+$/.test(s)) return undefined;
+  const n = Number(s);
+  return n <= 1000000 ? n : undefined;
+}
+// Members whose FULL name is exactly what was typed: first + last, or
+// preferred + last (ignoring capitals, accents and punctuation). No partial
+// names, single names or initials, so nobody can browse the list.
+function membersByFullName(input, roster) {
+  const typed = normName(input);
+  if (!typed || typed.split(' ').length < 2) return [];
+  return (roster || []).filter(m => {
+    const last = normName(m.last_name);
+    return typed === `${normName(m.first_name)} ${last}` || (!!m.preferred_name && typed === `${normName(m.preferred_name)} ${last}`);
+  });
+}
+// Officers save many members' points at once: [{ id, points }].
+async function setRosterPoints(list) {
+  if (!Array.isArray(list) || !list.length) throw new SignupError('No points to save.');
+  if (list.length > 2000) throw new SignupError('Too many members at once.');
+  const rows = list.map(r => {
+    const points = cleanPoints(r && r.points);
+    if (points === undefined) throw new SignupError(`Points need to be whole numbers from 0 to 1,000,000 (got "${r.points}").`);
+    return { id: Number(r && r.id), points };
+  });
+  const { d } = await mdb();
+  const res = await d.collection(C.roster).bulkWrite(rows.map(r => ({ updateOne: { filter: { _id: String(r.id) }, update: { $set: { points: r.points } } } })));
+  return { saved: res.matchedCount };
+}
+
+// ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 function intIn(v, lo, hi, label) {
@@ -443,6 +481,20 @@ async function codeAccepted(code) {
     return { required: f.code_required, code: f.code };
   });
   return !g.required || normCode(code) === normCode(g.code);
+}
+
+// Public: one member's points by their FULL name. Returns only that
+// member's name and points (no list, no suggestions).
+async function lookupPoints(name) {
+  const typed = String(name || '').slice(0, 120);
+  if (normName(typed).split(' ').filter(Boolean).length < 2) return { found: false, error: 'Type your first and last name.' };
+  const { d } = await mdb();
+  const roster = await cached('roster', ROSTER_TTL_MS, () => d.collection(C.roster).find({}).toArray());
+  const hits = membersByFullName(typed, roster);
+  if (!hits.length) return { found: false, error: `We couldn't find "${tidyName(typed)}". Type your first and last name the way it is on the chapter's FBLA member list.` };
+  if (hits.length > 1) return { found: false, error: 'More than one member has that name. Ask an officer for your points.' };
+  const m = hits[0];
+  return { found: true, name: fullName(m), points: m.points === undefined ? null : m.points };
 }
 
 // Check one typed name for the public form (live feedback before submitting).
@@ -724,6 +776,7 @@ async function signupsXlsx() {
 const dropping = (fn) => async (...args) => { try { return await fn(...args); } finally { dropCaches(); } };
 module.exports = {
   SignupError, normName, tidyName, resolveName, parseRosterText, cleanEvent, cleanMember,
+  cleanPoints, membersByFullName, lookupPoints, setRosterPoints: dropping(setRosterPoints),
   listRoster, addRosterMembers: dropping(addRosterMembers), updateRosterMember: dropping(updateRosterMember),
   deleteRosterMember: dropping(deleteRosterMember), clearRoster: dropping(clearRoster),
   listEvents, addEvent: dropping(addEvent), updateEvent: dropping(updateEvent), deleteEvent: dropping(deleteEvent),

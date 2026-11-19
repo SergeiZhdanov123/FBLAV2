@@ -535,6 +535,7 @@ function render() {
   renderOfficerGeneral();
   renderAudit();
   renderCustomization();
+  renderOfficerPoints();
   renderSettings();
   if (state.currentTab === 'dashboard') drawDashboardCharts();
 }
@@ -2685,6 +2686,130 @@ function handoverPanelHtml() {
 }
 
 // ===== Customization tab (all officers) =====
+// ----- Points (public Points page: leaderboard, form link, PDF link) -----
+// Saved as one setting (points_page) through the customization route; the
+// server cleans it (db.pointsPage) and stamps the date it was saved.
+function renderOfficerPoints() {
+  const el = $('#tab-points');
+  if (!el) return;
+  const p = (state.config && state.config.points_page) || { intro: '', form_url: '', pdf_url: '', leaderboard: [], updated_at: '' };
+  const rows = PTS_ROWS.map(i => p.leaderboard[i] || { name: '', points: null });
+  const place = PTS_PLACE;
+  const withPoints = (state.roster || []).filter(m => m.points !== null && m.points !== undefined).length;
+  const shown = (state.config || {}).points_visible !== false;
+  el.innerHTML = `
+    <h2>Points</h2>
+    <p class="hint">What members see on the site's Points page. Any officer can edit this.</p>
+    <div class="panel">
+      <div class="panel-head">
+        <h3>Points page ${shown ? '<span class="badge paid">On the site</span>' : '<span class="badge unpaid">Hidden</span>'}</h3>
+        <button class="btn small ${shown ? 'secondary' : ''}" id="pts-visible-btn" type="button" onclick="setPointsVisible(${shown ? 'false' : 'true'})">${shown ? 'Hide from the site' : 'Show on the site'}</button>
+      </div>
+      <p class="hint" style="margin:0;">${shown ? 'Members can see the Points page, the leaderboard, and look up their points.' : 'Nobody can see the Points page right now. It is gone from the menus, and the points lookup is turned off. Your leaderboard and member points are kept for when you show it again.'}</p>
+    </div>
+    <div class="panel">
+      <h3>Top 10 Leaderboard</h3>
+      <p style="color:var(--muted)">Name and point total for the top ten. Leave a name blank to leave that spot off.${p.updated_at ? ` Last saved ${esc(new Date(p.updated_at + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' }))}.` : ''}</p>
+      <div class="pts-edit">
+        <div class="pts-edit-head"><span></span><span>Name</span><span>Points</span></div>
+        ${rows.map((r, i) => `<div class="pts-edit-row">
+          <span class="pts-edit-place${i < 3 ? ` pts-edit-${i + 1}` : ''}">${place[i]}</span>
+          <input id="pts-name-${i}" maxlength="60" value="${esc(r.name)}" placeholder="Member name" aria-label="${place[i]} place name" />
+          <input id="pts-points-${i}" type="number" min="0" max="1000000" step="1" inputmode="numeric" value="${r.points === null || r.points === undefined ? '' : esc(String(r.points))}" placeholder="0" aria-label="${place[i]} place points" />
+        </div>`).join('')}
+      </div>
+      <div class="settings-row" style="gap:8px;margin-top:16px;">
+        <button class="btn secondary small" type="button" onclick="fillPointsFromRoster()" ${withPoints ? '' : 'disabled title="No member has points in the FBLA Member List yet"'}>Fill from member list</button>
+        <button class="btn secondary small" type="button" onclick="sortPointsRows()">Sort by points</button>
+        <button class="btn secondary small" type="button" onclick="clearPointsRows()">Clear all</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Member Points Lookup</h3>
+      <p style="color:var(--muted);margin-bottom:0;">On the Points page, a member can type their <strong>full name</strong> (first and last, exactly as on the member list) to see their own points. Nobody else's points are shown, and a partial name finds nothing. Set each member's points in the <a href="#" onclick="switchTab('member-list');return false;">FBLA Member List</a>. ${(state.roster || []).length ? `${withPoints} of ${(state.roster || []).length} members have points.` : 'The member list is empty, so nobody can look up points yet.'}</p>
+    </div>
+    <div class="panel">
+      <h3>Form, PDF, and Page Text</h3>
+      <div class="form-row"><label>Points form link</label><input id="pts-form" maxlength="400" value="${esc(p.form_url)}" placeholder="https://docs.google.com/forms/... (blank hides it)" /></div>
+      <div class="form-row"><label>Point system PDF link</label><input id="pts-pdf" maxlength="400" value="${esc(p.pdf_url)}" placeholder="https://drive.google.com/file/d/... (blank hides it)" /></div>
+      <p class="hint" style="margin:6px 0 0;">A Google Drive file link also shows the PDF right on the page. Set the file's sharing to "Anyone with the link" or members won't be able to see it.</p>
+      <div class="form-row"><label>Line under the title</label><textarea id="pts-intro" rows="2" maxlength="300">${esc(p.intro)}</textarea></div>
+    </div>
+    <div class="settings-row" style="gap:8px;">
+      <button class="btn" id="pts-save" type="button" onclick="savePoints()">Save Points Page</button>
+      <a class="btn secondary" href="/#points" target="_blank" rel="noopener">View the Points page</a>
+      <button class="btn secondary" type="button" onclick="resetPoints()">Go back to the original</button>
+    </div>`;
+}
+const PTS_ROWS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+const PTS_PLACE = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
+function readPointsRows() {
+  return PTS_ROWS.map(i => ({ name: $(`#pts-name-${i}`).value.trim(), points: $(`#pts-points-${i}`).value.trim() }));
+}
+window.sortPointsRows = function() {
+  const rows = readPointsRows().filter(r => r.name || r.points)
+    .sort((a, b) => (Number(b.points) || 0) - (Number(a.points) || 0));
+  setPointsRows(rows);
+};
+function setPointsRows(rows) {
+  PTS_ROWS.forEach(i => {
+    $(`#pts-name-${i}`).value = rows[i] ? rows[i].name : '';
+    $(`#pts-points-${i}`).value = rows[i] ? rows[i].points : '';
+  });
+}
+// The ten members with the most points in the FBLA Member List. Fills the
+// boxes only; nothing is saved until Save Points Page.
+window.fillPointsFromRoster = function() {
+  const top = (state.roster || []).filter(m => m.points !== null && m.points !== undefined)
+    .sort((a, b) => b.points - a.points || a.last_name.localeCompare(b.last_name))
+    .slice(0, 10).map(m => ({ name: `${m.first_name} ${m.last_name}`, points: String(m.points) }));
+  if (!top.length) return alert('No member has points in the FBLA Member List yet.');
+  setPointsRows(top);
+};
+window.clearPointsRows = function() {
+  PTS_ROWS.forEach(i => { $(`#pts-name-${i}`).value = ''; $(`#pts-points-${i}`).value = ''; });
+};
+window.savePoints = async function() {
+  const btn = $('#pts-save');
+  const label = btn.textContent;
+  try {
+    const rows = readPointsRows();
+    for (const [i, r] of rows.entries()) {
+      if (r.points && !r.name) throw new Error(`Add a name for ${PTS_PLACE[i]} place, or clear its points.`);
+      if (r.points && !/^\d+$/.test(r.points)) throw new Error('Points need to be whole numbers, like 120.');
+    }
+    const form_url = $('#pts-form').value.trim();
+    const pdf_url = $('#pts-pdf').value.trim();
+    for (const u of [form_url, pdf_url]) if (u && !/^https?:\/\/\S+$/i.test(u)) throw new Error('Links need to start with https://');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    await api('PUT', '/api/settings/customization', { points_page: {
+      intro: $('#pts-intro').value,
+      form_url, pdf_url,
+      leaderboard: rows.map(r => ({ name: r.name, points: r.points === '' ? null : Number(r.points) })),
+    } });
+    await loadAll(); render();
+    alert('Points page saved. It shows on the site within about 15 seconds.');
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    const b = $('#pts-save');
+    if (b) { b.disabled = false; b.textContent = label; }
+  }
+};
+window.setPointsVisible = async function(visible) {
+  if (!visible && !confirm('Hide the Points page from the site? Nobody will see it until you show it again.')) return;
+  try {
+    await api('PATCH', '/api/points/visibility', { visible });
+    if (state.config) state.config.points_visible = visible;
+    renderOfficerPoints();
+  } catch (e) { alert(e.message); }
+};
+window.resetPoints = async function() {
+  if (!confirm('Clear the leaderboard and put the form link, PDF link, and text back to the original?')) return;
+  await api('PUT', '/api/settings/customization', { points_page: null });
+  await loadAll(); render();
+};
+
 function renderCustomization() {
   const el = $('#tab-customization');
   if (!el) return;
@@ -2747,7 +2872,7 @@ const HOME_PHOTO_CHOICES = [
   ['regionals-speaker', 'Regionals: speaker'],
 ];
 const HOME_LINK_CHOICES = [
-  ['calendar', 'Calendar'], ['signup', 'Event Sign-Up'], ['forms', 'Forms'], ['updates', 'Announcements'],
+  ['calendar', 'Calendar'], ['signup', 'Event Sign-Up'], ['forms', 'Forms'], ['updates', 'Announcements'], ['points', 'Points'],
   ['buddies', 'Buddy System'], ['resources', 'Meeting slides'], ['prep', 'Study & Prep'], ['general', 'General resources'],
   ['event-quiz', 'Event quiz'], ['about', 'About the chapter'], ['officers', 'Officers and advisors (pop-up)'],
 ];
@@ -3825,6 +3950,9 @@ window.deleteBuddyGroup = async function(id) {
 
 // ---------------------------- FBLA Member List ----------------------------
 let rosterFilter = '';
+// Points typed but not saved yet, by member id (kept while the list redraws).
+let rosterPointsDraft = {};
+const memberPointsValue = (m) => (Object.prototype.hasOwnProperty.call(rosterPointsDraft, m.id) ? rosterPointsDraft[m.id] : (m.points === null || m.points === undefined ? '' : String(m.points)));
 function renderMemberList() {
   const el = $('#tab-member-list');
   if (!el) return;
@@ -3833,13 +3961,16 @@ function renderMemberList() {
   ((state.signup && state.signup.signups) || []).forEach(s => s.people.forEach(p => { if (p.roster_id) signedUp.set(p.roster_id, [...(signedUp.get(p.roster_id) || []), s.event_name]); }));
   const q = rosterFilter.trim().toLowerCase();
   const rows = roster.filter(m => !q || `${m.first_name} ${m.last_name} ${m.preferred_name || ''}`.toLowerCase().includes(q));
+  Object.keys(rosterPointsDraft).forEach(id => { if (!roster.some(m => m.id === Number(id))) delete rosterPointsDraft[id]; });
+  const unsaved = Object.keys(rosterPointsDraft).length;
   el.innerHTML = `
     <h2>FBLA Member List</h2>
-    <p class="hint">The chapter's registered FBLA members. While this list is empty, anyone can use Event Sign-Up with a first and last name. Once it has names, <strong>only members on this list can sign up</strong>. Members can type their full name, or just their first name if nobody else shares it, and the site matches it to this list (ignoring capitals, accents and punctuation). Add a preferred name (e.g. Bobby for Robert) so that works too. With a grade, 11th and 12th graders can't sign up for the 9th-10th grade events.</p>
+    <p class="hint">The chapter's registered FBLA members. While this list is empty, anyone can use Event Sign-Up with a first and last name. Once it has names, <strong>only members on this list can sign up</strong>. Members can type their full name, or just their first name if nobody else shares it, and the site matches it to this list (ignoring capitals, accents and punctuation). Add a preferred name (e.g. Bobby for Robert) so that works too. With a grade, 11th and 12th graders can't sign up for the 9th-10th grade events. <strong>Points</strong> are what a member sees when they type their full name on the site's Points page.</p>
     <div class="panel">
       <div class="panel-head">
         <h3>Members (${roster.length})</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${roster.length ? `<button class="btn small" id="roster-points-save" onclick="saveRosterPoints()" ${unsaved ? '' : 'disabled'}>${unsaved ? `Save points (${unsaved})` : 'Save points'}</button>` : ''}
           <button class="btn small secondary" onclick="openRosterImport()">Import a list</button>
           <button class="btn small" onclick="openRosterForm()">+ Add member</button>
           ${roster.length ? '<button class="btn small danger" onclick="clearRosterList()">Clear list</button>' : ''}
@@ -3848,15 +3979,47 @@ function renderMemberList() {
       ${roster.length ? `
         <input id="roster-filter" type="search" placeholder="Search members" value="${esc(rosterFilter)}" oninput="rosterFilter=this.value;renderMemberList();const f=$('#roster-filter');f.focus();f.setSelectionRange(f.value.length,f.value.length);" style="max-width:320px;margin-bottom:10px;" />
         <div class="table-scroll"><table>
-          <thead><tr><th>Last name</th><th>First name</th><th>Preferred name</th><th>Grade</th><th>Signed up for</th><th></th></tr></thead>
+          <thead><tr><th>Last name</th><th>First name</th><th>Preferred name</th><th>Grade</th><th>Points</th><th>Signed up for</th><th></th></tr></thead>
           <tbody>${rows.map(m => `<tr>
             <td>${esc(m.last_name)}</td><td>${esc(m.first_name)}</td><td>${esc(m.preferred_name || '')}</td><td>${esc(m.grade || '')}</td>
+            <td><input class="roster-points" type="number" min="0" max="1000000" step="1" inputmode="numeric" value="${esc(memberPointsValue(m))}" placeholder="-" aria-label="Points for ${esc(m.first_name)} ${esc(m.last_name)}" oninput="setRosterPointsDraft(${m.id}, this.value)" /></td>
             <td>${(signedUp.get(m.id) || []).map(esc).join(', ') || '<span class="muted">-</span>'}</td>
             <td style="white-space:nowrap;"><button class="btn small secondary" onclick="openRosterForm(${m.id})">Edit</button> <button class="btn small danger" onclick="deleteRosterMember(${m.id})">Remove</button></td>
-          </tr>`).join('') || '<tr><td colspan="6" class="muted">No members match.</td></tr>'}</tbody>
+          </tr>`).join('') || '<tr><td colspan="7" class="muted">No members match.</td></tr>'}</tbody>
         </table></div>` : '<div class="empty">No members yet. Use <strong>Import a list</strong> to paste everyone at once.</div>'}
     </div>`;
 }
+window.setRosterPointsDraft = function(id, value) {
+  const m = (state.roster || []).find(x => x.id === id);
+  const saved = !m || m.points === null || m.points === undefined ? '' : String(m.points);
+  if (String(value).trim() === saved) delete rosterPointsDraft[id];
+  else rosterPointsDraft[id] = String(value).trim();
+  const n = Object.keys(rosterPointsDraft).length;
+  const b = $('#roster-points-save');
+  if (b) { b.disabled = !n; b.textContent = n ? `Save points (${n})` : 'Save points'; }
+};
+window.saveRosterPoints = async function() {
+  const ids = Object.keys(rosterPointsDraft).map(Number);
+  if (!ids.length) return;
+  const bad = ids.find(id => rosterPointsDraft[id] !== '' && !/^\d+$/.test(rosterPointsDraft[id]));
+  if (bad !== undefined) {
+    const m = (state.roster || []).find(x => x.id === bad);
+    return alert(`Points need to be whole numbers, like 120${m ? ` (check ${m.first_name} ${m.last_name})` : ''}.`);
+  }
+  const b = $('#roster-points-save');
+  if (b) { b.disabled = true; b.textContent = 'Saving...'; }
+  try {
+    await api('PUT', '/api/roster/points', { points: ids.map(id => ({ id, points: rosterPointsDraft[id] === '' ? null : Number(rosterPointsDraft[id]) })) });
+    rosterPointsDraft = {};
+    await reloadSignup();
+    renderOfficerPoints();
+  } catch (e) {
+    alert(e.message);
+    renderMemberList();
+  }
+};
+// Leaving with unsaved points loses them, so ask first.
+window.addEventListener('beforeunload', (e) => { if (Object.keys(rosterPointsDraft).length) { e.preventDefault(); e.returnValue = ''; } });
 window.openRosterForm = function(id) {
   const m = id ? (state.roster || []).find(x => x.id === id) : null;
   showModal(m ? 'Edit member' : 'Add member', `

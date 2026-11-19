@@ -1608,7 +1608,7 @@ function homeCardQueue(value) {
 // officer upload ("upload:<timestamp>", bytes in the home_photos collection).
 // A link is a page on the site (see HOME_LINK_PAGES) or an http(s) address.
 const HOME_PHOTOS = ['states-winners', 'states-hershey', 'states-stage', 'nationals-conference', 'nationals-delegation', 'regionals-awards', 'regionals-room', 'regionals-speaker'];
-const HOME_LINK_PAGES = ['calendar', 'signup', 'forms', 'updates', 'buddies', 'resources', 'prep', 'general', 'event-quiz', 'about', 'officers'];
+const HOME_LINK_PAGES = ['calendar', 'signup', 'forms', 'updates', 'points', 'buddies', 'resources', 'prep', 'general', 'event-quiz', 'about', 'officers'];
 const HOME_PHOTO_SLOTS = ['hero', 'box1', 'box2', 'box3'];
 const HOME_DEFAULTS = {
   hero: {
@@ -1698,6 +1698,44 @@ function homePage(value) {
 // Officer-uploaded home page photos, one per slot. The browser shrinks them
 // to a JPEG first; like resource covers they stay out of the hub bundle and
 // the Sheets backup.
+
+// ----- Points page (public #points): form link, point-system PDF, top 3 -----
+// One setting (points_page). Unsaved = these defaults; officers edit it from
+// the officer portal's Points tab.
+const POINTS_DEFAULTS = {
+  intro: '',
+  form_url: 'https://docs.google.com/forms/d/e/1FAIpQLSdjJKoH8SrDvcGQArTgKLcKtirukghNu5GP4VNswAcRUPImvQ/viewform',
+  pdf_url: 'https://drive.google.com/file/d/14bi1tLjCGVkICtHrrmqzh-QMyldCbT22/view',
+  leaderboard: [],
+  updated_at: '',
+};
+const httpLink = (v, fallback) => {
+  if (v === undefined || v === null) return fallback;
+  const t = String(v).trim().slice(0, 400);
+  return /^https?:\/\/[^\s"'<>]+$/i.test(t) ? t : '';
+};
+function pointsPage(value) {
+  let v = value;
+  if (typeof v === 'string') { try { v = v ? JSON.parse(v) : {}; } catch (e) { v = {}; } }
+  if (!v || typeof v !== 'object') v = {};
+  // Top 10 only, in the order given; rows with no name are dropped. Points are
+  // whole numbers (0 to 1,000,000), or blank if an officer leaves it empty.
+  const rows = Array.isArray(v.leaderboard) ? v.leaderboard : [];
+  const leaderboard = rows.slice(0, 30).map(r => {
+    const name = String((r && r.name) || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    const raw = r && r.points !== undefined && r.points !== null ? String(r.points).replace(/[,\s]/g, '') : '';
+    const n = /^\d+(\.\d+)?$/.test(raw) ? Math.min(1000000, Math.round(Number(raw))) : null;
+    return { name, points: n };
+  }).filter(r => r.name).slice(0, 10);
+  return {
+    intro: homeText(v.intro, POINTS_DEFAULTS.intro, 300),
+    form_url: httpLink(v.form_url, POINTS_DEFAULTS.form_url),
+    pdf_url: httpLink(v.pdf_url, POINTS_DEFAULTS.pdf_url),
+    leaderboard,
+    updated_at: /^\d{4}-\d{2}-\d{2}$/.test(String(v.updated_at || '')) ? String(v.updated_at) : '',
+  };
+}
+
 const HOME_PHOTO_MAX_BYTES = 750 * 1024;
 async function setHomePhoto(slot, dataUrl) {
   await init();
@@ -1735,6 +1773,9 @@ function publicConfig(s) {
     home_card_link: s.home_card_link || '',
     home_card_queue: homeCardQueue(s.home_card_queue),
     home_page: homePage(s.home_page),
+    points_page: pointsPage(s.points_page),
+    // Points page on the site: shown unless an officer hides it (Points tab).
+    points_visible: s.points_visible !== '0',
     // Hidden until an officer turns it on (Google Forms tab).
     event_quiz_visible: s.event_quiz_visible === '1',
     // Event Sign-Up page: shown on the hub only while officers have it open.
@@ -1827,6 +1868,7 @@ module.exports = {
   listSlideshows, addSlideshow, loadStudyLinks, deleteSlideshow, setSlideshowArchived, setSlideshowRecording, markSlideshowReviewed,
   setResourceCover, removeResourceCover, getResourceCover,
   homePage, HOME_DEFAULTS, HOME_PHOTOS, HOME_PHOTO_SLOTS, setHomePhoto, getHomePhoto,
+  pointsPage, POINTS_DEFAULTS,
   publicHub, publicConfig, competitiveEvents, DEFAULT_COMPETITIVE_EVENTS, systemStats,
 };
 

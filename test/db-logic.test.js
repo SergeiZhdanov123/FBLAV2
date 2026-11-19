@@ -145,3 +145,26 @@ test('homePage: defaults, blanks, and unsafe links', () => {
   assert.equal(db.homePage({ hero: { title: 'a'.repeat(500) } }).hero.title.length, 80);
   assert.equal(db.homePage(JSON.stringify({ footer: 'Hi' })).footer, 'Hi');
 });
+
+test('pointsPage: top 10, whole-number points, safe links', () => {
+  const d = db.pointsPage();
+  assert.deepEqual(d.leaderboard, []);
+  assert.ok(d.form_url.startsWith('https://docs.google.com/forms/'));
+  assert.ok(d.pdf_url.startsWith('https://drive.google.com/'));
+  const p = db.pointsPage({
+    leaderboard: [{ name: ' Ava  Chen ', points: '1,250' }, { name: '', points: 9 }, { name: 'Ben', points: 'lots' }, { name: 'Cy', points: 7.6 }, { name: 'Dee', points: 1 }],
+    form_url: 'javascript:alert(1)', pdf_url: '', updated_at: 'yesterday',
+  });
+  // Blank names drop out; bad numbers become blank.
+  assert.deepEqual(p.leaderboard, [{ name: 'Ava Chen', points: 1250 }, { name: 'Ben', points: null }, { name: 'Cy', points: 8 }, { name: 'Dee', points: 1 }]);
+  // Cut to ten after the blank names drop out.
+  const many = Array.from({ length: 14 }, (_, i) => ({ name: i % 2 ? `M${i}` : '', points: i }));
+  many.push(...Array.from({ length: 10 }, (_, i) => ({ name: `N${i}`, points: i })));
+  const ten = db.pointsPage({ leaderboard: many }).leaderboard;
+  assert.equal(ten.length, 10);
+  assert.deepEqual(ten.slice(0, 8).map(r => r.name), ['M1', 'M3', 'M5', 'M7', 'M9', 'M11', 'M13', 'N0']);
+  assert.equal(p.form_url, '');
+  assert.equal(p.pdf_url, '');
+  assert.equal(p.updated_at, '');
+  assert.equal(db.pointsPage({ leaderboard: [{ name: 'Z', points: 5e9 }] }).leaderboard[0].points, 1000000);
+});

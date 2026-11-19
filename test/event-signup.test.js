@@ -25,6 +25,32 @@ const ROSTER = [
 ];
 const who = (s) => { const r = su.resolveName(s, ROSTER); return r.ok ? r.name : `ERR: ${r.error}`; };
 
+test('points lookup: full name only, no partial names', () => {
+  const roster = [
+    { id: 1, first_name: 'Jane', last_name: 'Doe', points: 120 },
+    { id: 2, first_name: 'Robert', last_name: 'Lee', preferred_name: 'Bobby', points: 45 },
+    { id: 3, first_name: 'José', last_name: "O'Brien-Smith" },
+    { id: 4, first_name: 'Sam', last_name: 'Park' }, { id: 5, first_name: 'Sam', last_name: 'Park' },
+  ];
+  const ids = (s) => su.membersByFullName(s, roster).map(m => m.id);
+  assert.deepEqual(ids('Jane Doe'), [1]);
+  assert.deepEqual(ids('  JANE   doe '), [1], 'capitals and spaces ignored');
+  assert.deepEqual(ids('Bobby Lee'), [2], 'preferred name + last name');
+  assert.deepEqual(ids('Robert Lee'), [2]);
+  assert.deepEqual(ids('jose obrien smith'), [3], 'accents and punctuation ignored');
+  assert.deepEqual(ids('Sam Park'), [4, 5]);
+  for (const partial of ['Jane', 'Doe', 'Jane D', 'Ja Doe', 'Jane Do', 'Doe Jane', 'Jane Marie Doe', 'e', '']) {
+    assert.deepEqual(ids(partial), [], `"${partial}" must not match`);
+  }
+  assert.equal(su.cleanPoints(''), null);
+  assert.equal(su.cleanPoints(null), null);
+  assert.equal(su.cleanPoints('1,250'), 1250);
+  assert.equal(su.cleanPoints(0), 0);
+  assert.equal(su.cleanPoints('12.5'), undefined);
+  assert.equal(su.cleanPoints('-3'), undefined);
+  assert.equal(su.cleanPoints('2000000'), undefined);
+});
+
 test('names: full, reversed, middle, initial, first-only, preferred, accents', () => {
   assert.equal(who('Jane Doe'), 'Jane Doe');
   assert.equal(who('  jane   DOE '), 'Jane Doe');

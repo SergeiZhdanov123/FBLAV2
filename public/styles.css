@@ -2058,3 +2058,20 @@ a.login-about { text-decoration: none; }
   .hp-photo-pick { min-width: 0; }
   .hp-preview { width: 100%; }
 }
+
+/* Points tab (officer console) */
+.pts-edit { display: grid; gap: 8px; margin-top: 12px; max-width: 560px; }
+.pts-edit-head, .pts-edit-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) 120px; gap: 10px; align-items: center; }
+.pts-edit-head span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.pts-edit-row input { padding: 8px 11px; border: 1px solid var(--border); border-radius: 4px; font: inherit; width: 100%; min-width: 0; }
+.pts-edit-place { display: grid; place-items: center; height: 34px; border-radius: 6px; font-weight: 700; font-size: 13px; }
+.pts-edit-1 { background: #fdf0c4; color: #6b4d00; }
+.pts-edit-2 { background: #e4e9f0; color: #3f4a5a; }
+.pts-edit-3 { background: #f1e2d6; color: #7a4a28; }
+.pts-edit-place:not(.pts-edit-1):not(.pts-edit-2):not(.pts-edit-3) { background: #f2f4f7; color: #4a5568; }
+#tab-member-list .roster-points { width: 92px; margin: 0; padding: 6px 9px; }
+@media (max-width: 640px) {
+  #tab-points .form-row { grid-template-columns: minmax(0, 1fr); gap: 4px; align-items: stretch; }
+  .pts-edit-head, .pts-edit-row { grid-template-columns: 44px minmax(0, 1fr) 84px; gap: 8px; }
+}
+#tab-points a.btn, #tab-customization a.btn { text-decoration: none; }
