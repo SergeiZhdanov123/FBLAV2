@@ -631,8 +631,8 @@ function ptsLookupResultHtml() {
     ${r.points === null || r.points === undefined
       ? '<span class="pts-lookup-none">No points recorded yet. Turn them in with the points form.</span>'
       : `<strong class="pts-lookup-score">${esc(Number(r.points).toLocaleString('en-US'))}</strong><span class="pts-lookup-unit">${r.points === 1 ? 'point' : 'points'}</span>`}
-    ${Number.isInteger(r.rank) && Number.isInteger(r.of)
-      ? `<span class="pts-lookup-rank">${r.tied ? 'Tied for ' : ''}${ordinal(r.rank)} place out of ${r.of}</span>`
+    ${Number.isInteger(r.rank)
+      ? `<span class="pts-lookup-rank">${r.tied ? 'Tied for ' : ''}${ordinal(r.rank)} place</span>`
       : ''}
   </div>`;
 }
