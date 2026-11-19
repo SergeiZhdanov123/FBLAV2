@@ -1736,6 +1736,30 @@ function pointsPage(value) {
   };
 }
 
+// ----- Practice sites (top of the public Study & Prep page) -----
+// One setting (practice_sites). Unsaved = these defaults; officers edit it from
+// the officer portal's Study & Prep tab. A blank code and link hides KlutchPrep,
+// a blank link hides ChapterPrep.
+const PRACTICE_DEFAULTS = {
+  klutch_code: "FXZHSG",
+  klutch_url: "https://klutchprep.com/",
+  klutch_note: "Use the code on the official KlutchPrep site and follow your adviser's account setup instructions.",
+  chapterprep_url: "https://chapterprep.com/join/4DB1895A",
+  chapterprep_note: "Once there, go to Settings in the bottom left and add your name to your profile. First name and last initial is fine if you are concerned about privacy.",
+};
+function practiceSites(value) {
+  let v = value;
+  if (typeof v === 'string') { try { v = v ? JSON.parse(v) : {}; } catch (e) { v = {}; } }
+  if (!v || typeof v !== 'object') v = {};
+  return {
+    klutch_code: v.klutch_code === undefined || v.klutch_code === null ? PRACTICE_DEFAULTS.klutch_code : String(v.klutch_code).replace(/\s+/g, '').slice(0, 40),
+    klutch_url: httpLink(v.klutch_url, PRACTICE_DEFAULTS.klutch_url),
+    klutch_note: homeText(v.klutch_note, PRACTICE_DEFAULTS.klutch_note, 300),
+    chapterprep_url: httpLink(v.chapterprep_url, PRACTICE_DEFAULTS.chapterprep_url),
+    chapterprep_note: homeText(v.chapterprep_note, PRACTICE_DEFAULTS.chapterprep_note, 300),
+  };
+}
+
 const HOME_PHOTO_MAX_BYTES = 750 * 1024;
 async function setHomePhoto(slot, dataUrl) {
   await init();
@@ -1776,6 +1800,7 @@ function publicConfig(s) {
     points_page: pointsPage(s.points_page),
     // Points page on the site: shown unless an officer hides it (Points tab).
     points_visible: s.points_visible !== '0',
+    practice_sites: practiceSites(s.practice_sites),
     // Hidden until an officer turns it on (Google Forms tab).
     event_quiz_visible: s.event_quiz_visible === '1',
     // Event Sign-Up page: shown on the hub only while officers have it open.
@@ -1868,7 +1893,7 @@ module.exports = {
   listSlideshows, addSlideshow, loadStudyLinks, deleteSlideshow, setSlideshowArchived, setSlideshowRecording, markSlideshowReviewed,
   setResourceCover, removeResourceCover, getResourceCover,
   homePage, HOME_DEFAULTS, HOME_PHOTOS, HOME_PHOTO_SLOTS, setHomePhoto, getHomePhoto,
-  pointsPage, POINTS_DEFAULTS,
+  pointsPage, POINTS_DEFAULTS, practiceSites, PRACTICE_DEFAULTS,
   publicHub, publicConfig, competitiveEvents, DEFAULT_COMPETITIVE_EVENTS, systemStats,
 };
 

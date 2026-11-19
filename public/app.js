@@ -3326,6 +3326,7 @@ function renderOfficerResources() {
   el.innerHTML = `
     <h2>Study &amp; Prep Resources</h2>
     <p class="hint">Add study guides, rubrics, practice tests, and conference prep. Tag a resource with its competitive event and it shows on that event's page in Study &amp; Prep &gt; Events; an event's official PA guideline PDF becomes the main button there. Untagged resources show under "Other study materials".</p>
+    ${officerPracticeSitesPanel()}
     <div class="panel">
       <div class="panel-head">
         <h3>Study &amp; Prep Resources</h3>
@@ -3340,6 +3341,53 @@ function renderOfficerResources() {
     ${officerStudyLinksPanel()}
   `;
 }
+
+// KlutchPrep and ChapterPrep cards at the top of the site's Study & Prep page.
+function officerPracticeSitesPanel() {
+  const p = (state.config && state.config.practice_sites) || {};
+  return `
+    <div class="panel">
+      <div class="panel-head"><h3>KlutchPrep and ChapterPrep</h3></div>
+      <p class="hint" style="margin-top:0;">These two boxes sit at the top of the site's Study &amp; Prep page. Leave the KlutchPrep code and link blank to hide KlutchPrep, or the ChapterPrep link blank to hide ChapterPrep.</p>
+      <div class="form-row"><label>KlutchPrep chapter code</label><input id="ps-klutch-code" maxlength="40" value="${esc(p.klutch_code || '')}" placeholder="FXZHSG" /></div>
+      <div class="form-row"><label>KlutchPrep link</label><input id="ps-klutch-url" maxlength="400" value="${esc(p.klutch_url || '')}" placeholder="https://klutchprep.com/" /></div>
+      <div class="form-row"><label>KlutchPrep text</label><textarea id="ps-klutch-note" rows="2" maxlength="300">${esc(p.klutch_note || '')}</textarea></div>
+      <div class="form-row"><label>ChapterPrep join link</label><input id="ps-chapter-url" maxlength="400" value="${esc(p.chapterprep_url || '')}" placeholder="https://chapterprep.com/join/..." /></div>
+      <div class="form-row"><label>ChapterPrep text</label><textarea id="ps-chapter-note" rows="2" maxlength="300">${esc(p.chapterprep_note || '')}</textarea></div>
+      <div class="settings-row" style="gap:8px;margin-top:14px;">
+        <button class="btn" id="ps-save" type="button" onclick="savePracticeSites()">Save</button>
+        <a class="btn secondary" href="/#prep" target="_blank" rel="noopener">View Study &amp; Prep</a>
+        <button class="btn secondary" type="button" onclick="resetPracticeSites()">Go back to the original</button>
+      </div>
+    </div>`;
+}
+window.savePracticeSites = async function() {
+  const btn = $('#ps-save');
+  try {
+    const klutch_url = $('#ps-klutch-url').value.trim();
+    const chapterprep_url = $('#ps-chapter-url').value.trim();
+    for (const u of [klutch_url, chapterprep_url]) if (u && !/^https?:\/\/\S+$/i.test(u)) throw new Error('Links need to start with https://');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    await api('PUT', '/api/settings/customization', { practice_sites: {
+      klutch_code: $('#ps-klutch-code').value.trim(),
+      klutch_url, chapterprep_url,
+      klutch_note: $('#ps-klutch-note').value,
+      chapterprep_note: $('#ps-chapter-note').value,
+    } });
+    await loadAll(); render();
+    alert('Saved. It shows on the site within about 15 seconds.');
+  } catch (e) {
+    alert(e.message);
+  } finally {
+    const b = $('#ps-save');
+    if (b) { b.disabled = false; b.textContent = 'Save'; }
+  }
+};
+window.resetPracticeSites = async function() {
+  if (!confirm('Put the KlutchPrep code, links, and text back to the original?')) return;
+  await api('PUT', '/api/settings/customization', { practice_sites: null });
+  await loadAll(); render();
+};
 
 // Study & Prep > Links: plain links (Zoom sessions, sign-up pages, outside
 // sites) listed on the site's Study & Prep page under its Links tab.

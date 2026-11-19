@@ -578,6 +578,10 @@ app.put('/api/settings/customization', requireOfficer, ah(async (req, res) => {
     await db.setSetting('points_page', pts === null ? '' : JSON.stringify(pts));
     changed.push(b.points_page === null ? 'points page reset' : 'points page');
   }
+  if (b.practice_sites !== undefined) {
+    await db.setSetting('practice_sites', b.practice_sites === null ? '' : JSON.stringify(db.practiceSites(b.practice_sites)));
+    changed.push(b.practice_sites === null ? 'practice sites reset' : 'practice sites');
+  }
   if (b.home_card_queue !== undefined) { await db.setSetting('home_card_queue', JSON.stringify(db.homeCardQueue(b.home_card_queue))); changed.push('home card queue'); }
   if (b.chapter_name !== undefined) {
     await db.setSetting('chapter_name', String(b.chapter_name).trim().slice(0, 80));

@@ -168,3 +168,17 @@ test('pointsPage: top 10, whole-number points, safe links', () => {
   assert.equal(p.updated_at, '');
   assert.equal(db.pointsPage({ leaderboard: [{ name: 'Z', points: 5e9 }] }).leaderboard[0].points, 1000000);
 });
+
+test('practiceSites: defaults, edits, blanks hide, bad links dropped', () => {
+  const d = db.practiceSites(undefined);
+  assert.equal(d.klutch_code, 'FXZHSG');
+  assert.equal(d.chapterprep_url, 'https://chapterprep.com/join/4DB1895A');
+  const e = db.practiceSites(JSON.stringify({ klutch_code: ' AB 12 ', klutch_url: '', chapterprep_url: 'https://chapterprep.com/join/NEW1', chapterprep_note: '  Hi  there ' }));
+  assert.equal(e.klutch_code, 'AB12');
+  assert.equal(e.klutch_url, '');
+  assert.equal(e.chapterprep_url, 'https://chapterprep.com/join/NEW1');
+  assert.equal(e.chapterprep_note, 'Hi there');
+  assert.equal(db.practiceSites({ chapterprep_url: 'javascript:alert(1)' }).chapterprep_url, '');
+  assert.equal(db.practiceSites('not json').klutch_code, 'FXZHSG');
+  assert.deepEqual(db.publicConfig({}).practice_sites, d);
+});

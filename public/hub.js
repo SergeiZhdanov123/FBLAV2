@@ -1468,7 +1468,7 @@ let eventGuide = null, eventGuideLoading = false;
 function loadEventGuide() {
   if (eventGuide || eventGuideLoading) return;
   eventGuideLoading = true;
-  fetch('/event-guide.json?v=6').then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+  fetch('/event-guide.json?v=7').then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
     .then(g => { eventGuide = g; })
     .catch(() => { eventGuide = { events: [], failed: true }; })
     .finally(() => { eventGuideLoading = false; if (state.page === 'prep') render(); });
@@ -1705,21 +1705,24 @@ function linkResults() {
   }).join('');
 }
 // The chapter's practice sites (KlutchPrep code, ChapterPrep join link), at
-// the top of Study & Prep. The text is in public/event-guide.json.
+// the top of Study & Prep. Officers edit them in the portal's Study & Prep tab.
 function practiceSites() {
-  const g = eventGuide;
-  if (!g || (!g.klutchprep && !g.chapterprep)) return '';
+  const g = cfg().practice_sites;
+  if (!g) return '';
+  const klutch = g.klutch_code || g.klutch_url;
+  const chapter = safeUrl(g.chapterprep_url);
+  if (!klutch && !chapter) return '';
   return `<section class="ps-sites" aria-label="Practice sites">
-    ${g.klutchprep ? `<div class="ps-site">
-      <div class="ps-body"><h2>KlutchPrep</h2><p>${esc(g.klutchprep.note)}</p></div>
+    ${klutch ? `<div class="ps-site">
+      <div class="ps-body"><h2>KlutchPrep</h2>${g.klutch_note ? `<p>${esc(g.klutch_note)}</p>` : ''}</div>
       <div class="ps-foot">
-        <div class="ps-code"><span>Chapter code</span><code>${esc(g.klutchprep.code)}</code></div>
-        ${g.klutchprep.url ? `<a class="button gold" href="${safeUrl(g.klutchprep.url)}" target="_blank" rel="noopener">Open KlutchPrep${icon('external')}<span class="sr-only"> (opens in a new tab)</span></a>` : ''}
+        ${g.klutch_code ? `<div class="ps-code"><span>Chapter code</span><code>${esc(g.klutch_code)}</code></div>` : ''}
+        ${safeUrl(g.klutch_url) ? `<a class="button gold" href="${safeUrl(g.klutch_url)}" target="_blank" rel="noopener">Open KlutchPrep${icon('external')}<span class="sr-only"> (opens in a new tab)</span></a>` : ''}
       </div>
     </div>` : ''}
-    ${g.chapterprep ? `<div class="ps-site">
-      <div class="ps-body"><h2>ChapterPrep</h2><p>${esc(g.chapterprep.note)}</p></div>
-      <a class="button gold" href="${safeUrl(g.chapterprep.url)}" target="_blank" rel="noopener">Join ChapterPrep${icon('external')}<span class="sr-only"> (opens in a new tab)</span></a>
+    ${chapter ? `<div class="ps-site">
+      <div class="ps-body"><h2>ChapterPrep</h2>${g.chapterprep_note ? `<p>${esc(g.chapterprep_note)}</p>` : ''}</div>
+      <a class="button gold" href="${chapter}" target="_blank" rel="noopener">Join ChapterPrep${icon('external')}<span class="sr-only"> (opens in a new tab)</span></a>
     </div>` : ''}
   </section>`;
 }
