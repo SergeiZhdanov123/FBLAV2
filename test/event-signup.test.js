@@ -65,14 +65,14 @@ test('points rank: ties share a place, officers and duplicate entries do not cou
   ];
   const officers = new Set(['ola reed']);
   const r = (id) => su.pointsRank(roster.find(m => m.id === id), roster, officers);
-  assert.deepEqual(r(1), { rank: 1, tied: false, of: 6 });
-  assert.deepEqual(r(4), { rank: 3, tied: true, of: 6 });
-  assert.deepEqual(r(5), { rank: 3, tied: true, of: 6 });
-  assert.deepEqual(r(6), { rank: 5, tied: false, of: 6 });
-  assert.deepEqual(r(7), { rank: 5, tied: false, of: 6 });
-  assert.deepEqual(r(8), { rank: 6, tied: false, of: 6 });
+  assert.deepEqual(r(1), { rank: 1, tied: false, tied_with: 0, of: 6 });
+  assert.deepEqual(r(4), { rank: 3, tied: true, tied_with: 1, of: 6 });
+  assert.deepEqual(r(5), { rank: 3, tied: true, tied_with: 1, of: 6 });
+  assert.deepEqual(r(6), { rank: 5, tied: false, tied_with: 0, of: 6 });
+  assert.deepEqual(r(7), { rank: 5, tied: false, tied_with: 0, of: 6 });
+  assert.deepEqual(r(8), { rank: 6, tied: false, tied_with: 0, of: 6 });
   assert.equal(r(9), null);
-  assert.deepEqual(su.pointsRank(roster[0], roster, null), { rank: 2, tied: false, of: 7 }, 'without the officer list the officer counts');
+  assert.deepEqual(su.pointsRank(roster[0], roster, null), { rank: 2, tied: false, tied_with: 0, of: 7 }, 'without the officer list the officer counts');
 });
 
 test('names: full, reversed, middle, initial, first-only, preferred, accents', () => {

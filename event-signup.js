@@ -500,9 +500,11 @@ function pointsRank(member, roster, officers) {
   for (const m of roster || []) if (typeof m.points === 'number' && !isOfficer(m)) pool.set(person(m), m.points);
   pool.set(person(member), member.points);
   const pts = [...pool.values()];
+  const others = pts.filter(p => p === member.points).length - 1;
   return {
     rank: 1 + pts.filter(p => p > member.points).length,
-    tied: pts.filter(p => p === member.points).length > 1,
+    tied: others > 0,
+    tied_with: others,
     of: pts.length,
   };
 }
