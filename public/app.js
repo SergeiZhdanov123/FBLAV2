@@ -1981,7 +1981,7 @@ function emailStatusPanelHtml() {
     return `
       <div class="panel">
         <h3>Email delivery</h3>
-        <p style="color:var(--muted)">Email is <strong>not set up yet</strong>, so nothing can be sent. An adult with access to the hosting dashboard needs to add a Resend API key (<code>ResendAPI</code>) or SMTP credentials to the environment variables.</p>
+        <p style="color:var(--muted)">Email is <strong>turned off</strong>. The site does not send email to anyone: not for announcements, sign-ups, new officer accounts, or password resets.</p>
       </div>`;
   }
   const admin = !!st.can_manage;

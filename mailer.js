@@ -9,8 +9,12 @@
 //   MAIL_FROM="State High FBLA <chapter@yourdomain.com>"   (optional)
 //   APP_URL=https://your-site.com      (optional, used for links in emails)
 //
+// EMAIL IS SWITCHED OFF. The site sends no email to anyone (chapter decision,
+// Nov 2026), even when a Resend key or SMTP login is in the environment.
+// Only setting EMAIL_ENABLED=1 in the hosting environment turns it back on.
+//
 // V2 keeps no student accounts, so no email ever goes to a student from here.
-// What is sent:
+// What would be sent if email were switched on:
 //   - an officer's password reset code (when switched on in the Email tab)
 //   - a note to a new officer that their account exists
 //   - a test email, and one-off emails an officer writes to the officer team
@@ -37,8 +41,11 @@ function resendKey() {
 function smtpConfigured() {
   return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
 }
+function emailEnabled() {
+  return String(process.env.EMAIL_ENABLED || '').trim() === '1';
+}
 function isConfigured() {
-  return !!resendKey() || smtpConfigured();
+  return emailEnabled() && (!!resendKey() || smtpConfigured());
 }
 function fromAddress() {
   if (process.env.MAIL_FROM) return process.env.MAIL_FROM;
@@ -75,6 +82,8 @@ async function sendViaResend(to, subject, html) {
 }
 
 async function sendMail(to, subject, html) {
+  // Every email in the app goes through here, so this one check stops them all.
+  if (!emailEnabled()) throw new Error('Email is turned off for this site.');
   if (resendKey()) return sendViaResend(to, subject, html);
   const t = getTransport();
   if (!t) throw new Error('Email is not configured yet. Add ResendAPI (or SMTP credentials) to the environment.');
@@ -155,13 +164,13 @@ async function sendTestEmail(to, sentBy) {
 function status() {
   return {
     configured: isConfigured(),
-    transport: resendKey() ? 'resend' : (smtpConfigured() ? 'smtp' : null),
+    transport: !emailEnabled() ? null : resendKey() ? 'resend' : (smtpConfigured() ? 'smtp' : null),
     from: isConfigured() ? fromAddress() : null,
   };
 }
 
 module.exports = {
-  isConfigured, sendMail, sendTemplate, sendTestEmail,
+  isConfigured, emailEnabled, sendMail, sendTemplate, sendTestEmail,
   sendCustomEmail, resolveRecipients, status,
   // Pure helper, exported for the unit tests.
   dedupeRecipients,

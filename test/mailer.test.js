@@ -50,13 +50,15 @@ test('compose preview resolves the audience without sending', async () => {
 test('compose refuses an empty subject or body', async () => {
   // With no credentials the "not set up" guard fires first, so configure a
   // dummy transport to reach the subject/body validation underneath it.
-  const had = process.env.ResendAPI;
+  const had = process.env.ResendAPI, hadOn = process.env.EMAIL_ENABLED;
   process.env.ResendAPI = 'test-key-not-used';
+  process.env.EMAIL_ENABLED = '1';
   try {
     await assert.rejects(() => mailer.sendCustomEmail(fakeDb, { mode: 'officers', subject: '', body: 'hi' }), /subject/);
     await assert.rejects(() => mailer.sendCustomEmail(fakeDb, { mode: 'officers', subject: 'Hi', body: '  ' }), /message/);
   } finally {
     if (had === undefined) delete process.env.ResendAPI; else process.env.ResendAPI = had;
+    if (hadOn === undefined) delete process.env.EMAIL_ENABLED; else process.env.EMAIL_ENABLED = hadOn;
   }
 });
 
@@ -73,4 +75,21 @@ test('compose refuses to send when email is not configured', async () => {
 test('email status reports only the transport, never credentials', () => {
   const s = mailer.status();
   assert.deepEqual(Object.keys(s).sort(), ['configured', 'from', 'transport']);
+});
+
+test('email stays off even with a Resend key, unless EMAIL_ENABLED=1', async () => {
+  const had = process.env.ResendAPI, hadOn = process.env.EMAIL_ENABLED;
+  process.env.ResendAPI = 'test-key-not-used';
+  delete process.env.EMAIL_ENABLED;
+  try {
+    assert.equal(mailer.isConfigured(), false);
+    assert.equal(mailer.status().configured, false);
+    await assert.rejects(() => mailer.sendMail('someone@example.com', 'Hi', 'x'), /turned off/);
+    await assert.rejects(() => mailer.sendTemplate('someone@example.com', 'test', {}), /turned off/);
+    await assert.rejects(() => mailer.sendTestEmail('someone@example.com', 'X'), /turned off/);
+    await assert.rejects(() => mailer.sendCustomEmail(fakeDb, { mode: 'officers', subject: 'Hi', body: 'There' }), /not set up/);
+  } finally {
+    if (had === undefined) delete process.env.ResendAPI; else process.env.ResendAPI = had;
+    if (hadOn !== undefined) process.env.EMAIL_ENABLED = hadOn;
+  }
 });

@@ -424,7 +424,7 @@ app.post('/api/password-reset/complete', ipFloodLimiter, loginLimiter, ah(async 
 // ---- Public, read-only (no sign-in) ----
 // What the officer sign-in needs to know: only whether emailed reset codes are on.
 app.get('/api/public/signin-config', ah(async (req, res) => {
-  res.json({ password_reset_email: db.passwordResetEmailEnabled(await db.getSettings()) });
+  res.json({ password_reset_email: mailer.isConfigured() && db.passwordResetEmailEnabled(await db.getSettings()) });
 }));
 // The About page's officer list: names and titles only, never emails.
 app.get('/api/public/about', ah(async (req, res) => {
