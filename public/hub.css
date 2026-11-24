@@ -477,10 +477,11 @@ button.m-help-card p{margin-bottom:0}
 .day-entry.k-deadline{--entry:#b91c1c;--entry-bg:#fdefef}
 .day-entry.k-other{--entry-bg:#f4f0fa}
 .day-entry.k-other:not([style]){--entry:#7c3aed}
+.day-entry.k-other[style]{--entry-bg:color-mix(in srgb,var(--entry) 9%,#fff)}
 .day-entry.is-cont{opacity:.7}
 .day-entry-icon{flex:0 0 12px;display:inline-flex;margin-top:1px;color:var(--entry)}
 .day-entry-icon svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-.day-entry.k-other .day-entry-icon svg circle,.day-legend .k-other svg circle{fill:currentColor;stroke:none}
+.day-entry.k-other:not([style]) .day-entry-icon svg circle,.day-legend .k-other:not([style]) svg circle,.day-pop-row.k-other:not([style]) svg circle{fill:currentColor;stroke:none}
 .day-entry-text{display:flex;flex-direction:column;min-width:0}
 .day-entry-title{font-size:10.5px;font-weight:650;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .day-entry-time{font-size:9.5px;color:#6b7280;line-height:1.3}

@@ -797,6 +797,22 @@ const DAY_ICONS = {
   deadline: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.8V8l2.2 1.4"/></svg>',
   other: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/></svg>',
 };
+// Officer-made categories get a drawn icon instead of the plain "Other" dot:
+// a trophy for competitions, an FBLA badge for state/national FBLA dates, a tag otherwise.
+const CUSTOM_ICONS = {
+  trophy: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2.5h6v3.2a3 3 0 0 1-6 0zM5 3.6H2.8v.9A2.3 2.3 0 0 0 5 6.8M11 3.6h2.2v.9A2.3 2.3 0 0 1 11 6.8M8 8.7v2.6M5.5 13.5h5M6.3 13.5l.5-2.2h2.4l.5 2.2"/></svg>',
+  badge: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.6l5.2 2v4c0 3.1-2.2 5.4-5.2 6.8C5 13 2.8 10.7 2.8 7.6v-4z"/><path d="M8 4.6l.9 1.9 2 .3-1.5 1.4.4 2L8 9.2l-1.8 1 .4-2-1.5-1.4 2-.3z"/></svg>',
+  tag: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2.5h5.6l6.4 6.4-5.1 5.1L2.5 7.6V2.5z"/><circle cx="5.2" cy="5.6" r="1"/></svg>',
+};
+function kindIcon(kind) {
+  if (DAY_ICONS[kind] && kind !== 'other') return DAY_ICONS[kind];
+  const t = customTypes().find(x => x.key === kind);
+  if (!t) return DAY_ICONS.other;
+  const k = `${t.key} ${t.label}`.toLowerCase();
+  if (/compet|regional|state|nlc|slc/.test(k)) return CUSTOM_ICONS.trophy;
+  if (/fbla/.test(k)) return CUSTOM_ICONS.badge;
+  return CUSTOM_ICONS.tag;
+}
 // One entry inside a day of the month grid.
 function dayEntry(it, ds) {
   const kind = isMeeting(it) ? 'meeting' : (BUILTIN_KINDS[it.kind] ? it.kind : 'other');
@@ -804,7 +820,7 @@ function dayEntry(it, ds) {
   const cont = it.date !== ds;
   const style = meta.color && kind === 'other' ? ` style="--entry:${esc(meta.color)}"` : '';
   return `<div class="day-entry k-${kind} ${cont ? 'is-cont' : ''}"${style} title="${esc(it.title)}${it.time ? ', ' + esc(fmtTime(it.time)) : ''}">
-    <span class="day-entry-icon">${DAY_ICONS[kind]}</span>
+    <span class="day-entry-icon">${isMeeting(it) ? DAY_ICONS.meeting : kindIcon(it.kind)}</span>
     <span class="day-entry-text"><span class="day-entry-title">${cont ? '› ' : ''}${esc(it.title)}</span>${it.time && !cont ? `<span class="day-entry-time">${esc(fmtTime(it.time))}</span>` : ''}</span>
   </div>`;
 }
@@ -830,7 +846,7 @@ function calendarGridHTML() {
 }
 function calLegend() {
   const kinds = [['meeting', 'Meeting'], ['event', 'Event'], ['deadline', 'Deadline'], ['other', 'Other']];
-  return `<div class="day-legend">${kinds.map(([k, l]) => `<span class="k-${k}"><span class="day-entry-icon">${DAY_ICONS[k]}</span>${l}</span>`).join('')}${customTypes().map(t => `<span class="k-other" style="--entry:${esc(t.color || '#1462d9')}"><span class="day-entry-icon">${DAY_ICONS.other}</span>${esc(t.label)}</span>`).join('')}</div>`;
+  return `<div class="day-legend">${kinds.map(([k, l]) => `<span class="k-${k}"><span class="day-entry-icon">${DAY_ICONS[k]}</span>${l}</span>`).join('')}${customTypes().map(t => `<span class="k-other" style="--entry:${esc(t.color || '#1462d9')}"><span class="day-entry-icon">${kindIcon(t.key)}</span>${esc(t.label)}</span>`).join('')}</div>`;
 }
 function calListRow(c) {
   const meta = calMeta(c.kind);
@@ -911,7 +927,7 @@ function showCalDayPopover(ds, cell) {
       <div class="day-pop-time">${it.time ? esc(fmtTime(it.time)) : 'All day'}</div>
       <div class="day-pop-body">
         <div class="day-pop-title">${esc(it.title)}</div>
-        <div class="day-pop-meta"><span class="day-pop-kind"><span class="day-entry-icon">${DAY_ICONS[kind]}</span>${esc(kind === 'meeting' ? 'Meeting' : meta.label)}</span>${it.location ? `<span>${esc(it.location)}</span>` : ''}${when ? `<span>${when}</span>` : ''}</div>
+        <div class="day-pop-meta"><span class="day-pop-kind"><span class="day-entry-icon">${isMeeting(it) ? DAY_ICONS.meeting : kindIcon(it.kind)}</span>${esc(kind === 'meeting' ? 'Meeting' : meta.label)}</span>${it.location ? `<span>${esc(it.location)}</span>` : ''}${when ? `<span>${when}</span>` : ''}</div>
         ${it.description ? `<div class="day-pop-desc">${esc(it.description)}</div>` : ''}
         ${it.key ? `<button class="day-pop-add" type="button" data-action="download-item" data-id="${esc(it.key)}">Add to my calendar</button>` : ''}
       </div>
