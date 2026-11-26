@@ -438,6 +438,7 @@ app.get('/api/public/about', ah(async (req, res) => {
 }));
 // Everything the public hub shows, in one response.
 app.get('/api/public/hub', ah(async (req, res) => {
+  await syncPointsIfDue();
   // The pending read is cached too, so a crowd arriving together (or right
   // after the cache expires) shares one database read instead of each doing
   // every collection read again.
@@ -856,6 +857,18 @@ app.patch('/api/event-quiz', requireOfficer, ah(async (req, res) => {
 // Members sign up from the public hub (no accounts); officers manage the
 // events, the sign-ups, and the registered FBLA member list.
 const signup = require('./event-signup');
+// Member points come straight from the chapter's Google Sheet when officers
+// turn that on (Points tab). Checked at most every 10 minutes, on hub loads.
+const { createPointsSync } = require('./points-sheet');
+const pointsSync = createPointsSync({ db, signup, officerNames });
+// A slow Google answer never holds a page load for more than 4 seconds; the
+// sync keeps going and the next load picks up the result.
+async function syncPointsIfDue() {
+  try {
+    const r = await Promise.race([pointsSync.maybeSync(), new Promise(ok => setTimeout(() => ok({ changed: false }), 4000))]);
+    if (r && r.changed) { publicCache = null; pointsVisibleCache = null; signup.dropCaches(); }
+  } catch (e) { console.error('points sheet check failed:', e.message); }
+}
 // Per-IP ceilings sized for a whole school on ONE IP: school Wi-Fi puts every
 // student behind the same public address, so these have to fit ~150+ students
 // signing up together (every typed name is checked, and retries add more). They are
@@ -939,7 +952,24 @@ const pointsLookupLimiter = rateLimit(3000, 10 * 60 * 1000);
 app.post('/api/public/points/lookup', pointsLookupLimiter, sh(async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   if (!(await pointsVisible())) return res.status(404).json({ found: false, error: "Points aren't available right now." });
+  await syncPointsIfDue();
   res.json(await signup.lookupPoints((req.body || {}).name, await officerNames()));
+}));
+// Officers connect the points Google Sheet (Points tab).
+app.get('/api/points/sheet', requireOfficer, ah(async (req, res) => res.json(await pointsSync.getState())));
+app.put('/api/points/sheet', requireOfficer, ah(async (req, res) => {
+  const b = req.body || {};
+  let c;
+  try { c = await pointsSync.saveConfig({ url: String(b.url || '').slice(0, 500), tab: String(b.tab || '').slice(0, 100), enabled: !!b.enabled }); }
+  catch (e) { return res.status(400).json({ error: e.message }); }
+  await db.logAudit(req.session.name, 'points_sheet', c.enabled ? `Points come from the Google Sheet (tab "${c.tab}")` : (c.sheet_id ? 'Points sheet saved, automatic updates off' : 'Points sheet link removed'));
+  res.json(await pointsSync.getState());
+}));
+app.post('/api/points/sheet/sync', requireOfficer, ah(async (req, res) => {
+  const c = (await pointsSync.getState());
+  if (!c.sheet_id) return res.status(400).json({ error: 'Paste the sheet link and save it first.' });
+  const r = await pointsSync.syncNow(`Sync now by ${req.session.name}`);
+  res.json({ ...(await pointsSync.getState()), changed: !!r.changed });
 }));
 // Officers show or hide the whole Points page (Points tab).
 app.patch('/api/points/visibility', requireOfficer, ah(async (req, res) => {

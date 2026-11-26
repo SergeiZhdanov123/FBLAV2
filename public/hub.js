@@ -616,7 +616,6 @@ function pdfEmbedUrl(url) {
   return m ? `https://drive.google.com/file/d/${m[1]}/preview` : '';
 }
 const pointsText = (n) => (n === null || n === undefined ? '' : `${Number(n).toLocaleString('en-US')} ${n === 1 ? 'point' : 'points'}`);
-const PLACE = ['1st', '2nd', '3rd'];
 const ordinal = (n) => `${n}${[11, 12, 13].includes(n % 100) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
 // One member's own points, by their full name (POST /api/public/points/lookup).
 // Nothing is suggested while typing; only an exact full name finds anyone.
@@ -669,19 +668,25 @@ function renderPoints() {
   const top = ranked.slice(0, 3);
   const rest = ranked.slice(3);
   const embed = pdfEmbedUrl(p.pdf_url);
+  // Equal points share a place (two members on 37 are both 5th), like the lookup.
+  const placeOf = (i) => {
+    const pts = ranked[i].points;
+    if (typeof pts !== 'number') return i + 1;
+    return 1 + ranked.filter(r => typeof r.points === 'number' && r.points > pts).length;
+  };
   // Podium order on wide screens: 2nd, 1st, 3rd. Phones list them 1, 2, 3.
   const spot = (r, i) => `<li class="pts-spot pts-${i + 1}">
-      <span class="pts-medal" aria-hidden="true">${i + 1}</span>
-      <span class="sr-only">${PLACE[i]} place: </span>
+      <span class="pts-medal" aria-hidden="true">${placeOf(i)}</span>
+      <span class="sr-only">${ordinal(placeOf(i))} place: </span>
       <strong class="pts-name">${esc(r.name)}</strong>
       ${r.points !== null && r.points !== undefined ? `<span class="pts-score">${esc(pointsText(r.points))}</span>` : ''}
-      <span class="pts-base" aria-hidden="true">${PLACE[i]}</span>
+      <span class="pts-base" aria-hidden="true">${ordinal(placeOf(i))}</span>
     </li>`;
   const board = top.length
     ? `<ol class="pts-podium pts-n${top.length}">${top.map(spot).join('')}</ol>
       ${rest.length ? `<ol class="pts-rest" start="4">${rest.map((r, i) => `<li>
-        <span class="pts-rank" aria-hidden="true">${i + 4}</span>
-        <span class="sr-only">${ordinal(i + 4)} place: </span>
+        <span class="pts-rank" aria-hidden="true">${placeOf(i + 3)}</span>
+        <span class="sr-only">${ordinal(placeOf(i + 3))} place: </span>
         <strong class="pts-rest-name">${esc(r.name)}</strong>
         ${r.points !== null && r.points !== undefined ? `<span class="pts-rest-score">${esc(pointsText(r.points))}</span>` : ''}
       </li>`).join('')}</ol>` : ''}`

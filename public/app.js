@@ -2707,6 +2707,7 @@ function renderOfficerPoints() {
       </div>
       <p class="hint" style="margin:0;">${shown ? 'Members can see the Points page, the leaderboard, and look up their points.' : 'Nobody can see the Points page right now. It is gone from the menus, and the points lookup is turned off. Your leaderboard and member points are kept for when you show it again.'}</p>
     </div>
+    ${pointsSheetPanelHtml()}
     <div class="panel">
       <h3>Top 10 Leaderboard</h3>
       <p style="color:var(--muted)">Name and point total for the top ten. Leave a name blank to leave that spot off.${p.updated_at ? ` Last saved ${esc(new Date(p.updated_at + 'T12:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' }))}.` : ''}</p>
@@ -2741,6 +2742,82 @@ function renderOfficerPoints() {
       <button class="btn secondary" type="button" onclick="resetPoints()">Go back to the original</button>
     </div>`;
 }
+// ----- Points from the Google Sheet -----
+// The site reads the sheet (never writes it) every 10 minutes while someone
+// is on the hub, and updates member points and the top 10 by itself.
+let ptsSheet = null; // { sheet_id, tab, enabled, status, service_email }
+let ptsSheetLoading = false;
+function loadPointsSheet() {
+  if (ptsSheetLoading) return;
+  ptsSheetLoading = true;
+  api('GET', '/api/points/sheet')
+    .then(r => { ptsSheet = r; })
+    .catch(() => { ptsSheet = { error: true }; })
+    .finally(() => { ptsSheetLoading = false; renderOfficerPoints(); });
+}
+function ptsWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+function pointsSheetPanelHtml() {
+  if (!ptsSheet) { loadPointsSheet(); return '<div class="panel"><h3>Automatic Updates from Google Sheet</h3><p class="hint" style="margin:0;">Loading...</p></div>'; }
+  if (ptsSheet.error) return '<div class="panel"><h3>Automatic Updates from Google Sheet</h3><p class="hint" style="margin:0;">Could not load this. Refresh the page to try again.</p></div>';
+  const c = ptsSheet, st = c.status;
+  const link = c.sheet_id ? `https://docs.google.com/spreadsheets/d/${c.sheet_id}/edit` : '';
+  const list = (label, names) => (names && names.length ? `<details style="margin-top:8px;"><summary>${esc(label)} (${names.length})</summary><p class="hint" style="margin:6px 0 0;">${names.map(esc).join(', ')}</p></details>` : '');
+  const statusHtml = !st ? '<p class="hint" style="margin:8px 0 0;">Not checked yet.</p>'
+    : `<p class="hint" style="margin:8px 0 0;">${st.ok
+      ? `Last checked ${esc(ptsWhen(st.checked_at))}: ${st.matched} of ${st.sheet_names} names in the sheet matched the member list.${st.changed_at ? ` Points last changed ${esc(ptsWhen(st.changed_at))}.` : ''}`
+      : `<strong style="color:var(--danger, #b91c1c);">Last check ${esc(ptsWhen(st.checked_at))} didn't work:</strong> ${esc(st.error)} The site still shows the last good points.`}</p>
+      ${list('In the sheet but not on the member list (skipped)', st.unmatched)}
+      ${list('Matches more than one member (skipped)', st.ambiguous)}
+      ${list('Rows the site could not read', st.problems)}`;
+  return `<div class="panel">
+      <div class="panel-head">
+        <h3>Automatic Updates from Google Sheet ${c.enabled ? '<span class="badge paid">On</span>' : '<span class="badge unpaid">Off</span>'}</h3>
+      </div>
+      <p class="hint" style="margin:0 0 10px;">When this is on, the site reads the points sheet every 10 minutes and updates everyone's points and the top 10 by itself. It only reads the sheet and never changes it. While it's on, points you type in the member list or the leaderboard below get replaced by the sheet. Share the sheet (Viewer) with <code>${esc(c.service_email || 'the site\'s service account')}</code>.</p>
+      <div class="form-row"><label>Google Sheet link</label><input id="pts-sheet-url" maxlength="500" value="${esc(link)}" placeholder="https://docs.google.com/spreadsheets/d/..." /></div>
+      <div class="form-row"><label>Tab name</label><input id="pts-sheet-tab" maxlength="100" value="${esc(c.tab || 'Points')}" placeholder="Points" /></div>
+      <p class="hint" style="margin:0 0 10px;">It reads the first "Member Name" and "Total Points" columns in that tab.</p>
+      <div class="settings-row" style="gap:8px;">
+        <button class="btn small${c.enabled ? ' secondary' : ''}" type="button" id="pts-sheet-save" onclick="savePointsSheet(${c.enabled ? 'false' : 'true'})">${c.enabled ? 'Turn off' : 'Save and turn on'}</button>
+        ${c.sheet_id ? '<button class="btn secondary small" type="button" id="pts-sheet-sync" onclick="syncPointsSheet()">Sync now</button>' : ''}
+        ${c.enabled ? '<button class="btn secondary small" type="button" onclick="savePointsSheet(true)">Save link</button>' : ''}
+      </div>
+      ${statusHtml}
+    </div>`;
+}
+window.savePointsSheet = async function(enabled) {
+  const btn = $('#pts-sheet-save');
+  try {
+    if (btn) btn.disabled = true;
+    ptsSheet = await api('PUT', '/api/points/sheet', { url: $('#pts-sheet-url').value.trim(), tab: $('#pts-sheet-tab').value.trim(), enabled });
+    if (enabled) {
+      ptsSheet = await api('POST', '/api/points/sheet/sync', {});
+      await loadAll();
+    }
+    render();
+  } catch (e) {
+    alert(e.message);
+    if (btn) btn.disabled = false;
+  }
+};
+window.syncPointsSheet = async function() {
+  const btn = $('#pts-sheet-sync');
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Syncing...'; }
+    ptsSheet = await api('POST', '/api/points/sheet/sync', {});
+    await loadAll();
+    render();
+    if (ptsSheet.status && !ptsSheet.status.ok) return;
+    alert(ptsSheet.changed ? 'Points updated from the sheet. The site shows them within about 15 seconds.' : 'Already up to date with the sheet.');
+  } catch (e) {
+    alert(e.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Sync now'; }
+  }
+};
 const PTS_ROWS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 const PTS_PLACE = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'];
 function readPointsRows() {
